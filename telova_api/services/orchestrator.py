@@ -169,6 +169,12 @@ class TelovaOrchestratorService:
     async def search_tasks(self, user_id: str, query: str, limit: int = 5) -> list[Task]:
         return await self.task_repo.search(user_id=user_id, query=query, limit=limit)
 
+    async def list_tasks(self, user_id: str) -> list[Task]:
+        return await self.task_repo.list_by_user(user_id)
+
+    async def list_notes(self, user_id: str, limit: int = 50) -> list:
+        return await self.note_repo.list_by_user(user_id, limit=limit)
+
     async def get_dashboard(self, user_id: str) -> dict:
         goals = await self.goal_repo.list_by_user(user_id)
         tasks = await self.task_repo.list_by_user(user_id)

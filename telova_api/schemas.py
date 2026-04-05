@@ -184,3 +184,43 @@ class DashboardRead(BaseModel):
     upcoming_events: list[CalendarEventRead]
     notes: list[NoteRead]
 
+
+class SystemMetricRead(BaseModel):
+    label: str
+    value: int
+    tone: str = "info"
+
+
+class AgentHealthRead(BaseModel):
+    name: str
+    role: str
+    status: str
+    detail: str
+    load_label: str
+
+
+class ToolConnectionRead(BaseModel):
+    name: str
+    kind: str
+    status: str
+    detail: str
+
+
+class WorkflowLogRead(BaseModel):
+    title: str
+    detail: str
+    status: str
+    timestamp: datetime | None = None
+
+
+class SystemStatusRead(BaseModel):
+    app: str
+    environment: str
+    database: str
+    runtime_mode: str
+    status: str
+    last_updated: datetime
+    metrics: list[SystemMetricRead]
+    agents: list[AgentHealthRead]
+    connections: list[ToolConnectionRead]
+    workflows: list[WorkflowLogRead]
