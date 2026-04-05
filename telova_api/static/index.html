@@ -1,0 +1,506 @@
+﻿<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Telova</title>
+  <style>
+    :root {
+      --bg: #f4efe6;
+      --paper: #fffdf8;
+      --ink: #182126;
+      --muted: #5f6b73;
+      --accent: #0f766e;
+      --accent-strong: #124f4a;
+      --warm: #d97706;
+      --line: rgba(24, 33, 38, 0.12);
+      --shadow: 0 18px 48px rgba(24, 33, 38, 0.12);
+      --radius: 22px;
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      min-height: 100vh;
+      color: var(--ink);
+      font-family: "Trebuchet MS", "Segoe UI Variable Text", sans-serif;
+      background:
+        radial-gradient(circle at top left, rgba(217, 119, 6, 0.18), transparent 32%),
+        radial-gradient(circle at top right, rgba(15, 118, 110, 0.18), transparent 24%),
+        linear-gradient(180deg, #f8f1e6 0%, #eef4f2 52%, #f8f6f0 100%);
+    }
+
+    .shell {
+      width: min(1240px, calc(100% - 32px));
+      margin: 24px auto 48px;
+    }
+
+    .hero {
+      padding: 32px;
+      border-radius: 32px;
+      background: rgba(255, 253, 248, 0.84);
+      border: 1px solid rgba(255, 255, 255, 0.5);
+      box-shadow: var(--shadow);
+      backdrop-filter: blur(8px);
+    }
+
+    .hero h1 {
+      margin: 0 0 10px;
+      font-family: Georgia, "Palatino Linotype", serif;
+      font-size: clamp(2.3rem, 4vw, 4.2rem);
+      letter-spacing: -0.03em;
+    }
+
+    .hero p {
+      max-width: 720px;
+      margin: 0;
+      color: var(--muted);
+      font-size: 1.05rem;
+      line-height: 1.65;
+    }
+
+    .grid {
+      display: grid;
+      grid-template-columns: 1.05fr 0.95fr;
+      gap: 18px;
+      margin-top: 18px;
+    }
+
+    .panel {
+      background: rgba(255, 253, 248, 0.92);
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      padding: 22px;
+      box-shadow: var(--shadow);
+    }
+
+    .panel h2 {
+      margin: 0 0 14px;
+      font-family: Georgia, "Palatino Linotype", serif;
+      font-size: 1.5rem;
+    }
+
+    .panel h3 {
+      margin: 0 0 10px;
+      font-size: 1rem;
+      text-transform: uppercase;
+      letter-spacing: 0.12em;
+      color: var(--accent-strong);
+    }
+
+    .stack { display: grid; gap: 14px; }
+    .row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+
+    label {
+      display: block;
+      font-size: 0.85rem;
+      margin-bottom: 6px;
+      color: var(--muted);
+    }
+
+    input, textarea, button {
+      width: 100%;
+      font: inherit;
+    }
+
+    input, textarea {
+      border: 1px solid rgba(24, 33, 38, 0.14);
+      background: rgba(255, 255, 255, 0.7);
+      border-radius: 16px;
+      padding: 13px 14px;
+      color: var(--ink);
+    }
+
+    textarea { min-height: 120px; resize: vertical; }
+
+    button {
+      border: none;
+      border-radius: 999px;
+      padding: 13px 16px;
+      cursor: pointer;
+      background: linear-gradient(135deg, var(--accent) 0%, var(--accent-strong) 100%);
+      color: white;
+      transition: transform 140ms ease, filter 140ms ease;
+    }
+
+    button.secondary {
+      background: linear-gradient(135deg, var(--warm) 0%, #b45309 100%);
+    }
+
+    button.ghost {
+      background: rgba(24, 33, 38, 0.08);
+      color: var(--ink);
+    }
+
+    button:hover { transform: translateY(-1px); filter: saturate(1.08); }
+
+    .toolbar {
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+      margin-top: 16px;
+    }
+
+    .stat-grid {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 12px;
+      margin-top: 16px;
+    }
+
+    .stat {
+      padding: 16px;
+      border-radius: 18px;
+      background: linear-gradient(180deg, rgba(255,255,255,0.9), rgba(255,255,255,0.68));
+      border: 1px solid var(--line);
+    }
+
+    .stat strong {
+      display: block;
+      font-size: 1.6rem;
+      margin-bottom: 4px;
+    }
+
+    .cards { display: grid; gap: 12px; }
+
+    .card {
+      border: 1px solid var(--line);
+      border-radius: 18px;
+      padding: 16px;
+      background: rgba(255, 255, 255, 0.78);
+    }
+
+    .card small {
+      display: block;
+      color: var(--muted);
+      margin-top: 6px;
+      line-height: 1.5;
+    }
+
+    .pill {
+      display: inline-flex;
+      align-items: center;
+      border-radius: 999px;
+      padding: 6px 10px;
+      background: rgba(15, 118, 110, 0.12);
+      color: var(--accent-strong);
+      font-size: 0.78rem;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+    }
+
+    .split {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 14px;
+    }
+
+    .muted {
+      color: var(--muted);
+      line-height: 1.6;
+    }
+
+    .status {
+      margin-top: 14px;
+      padding: 14px 16px;
+      border-radius: 18px;
+      background: rgba(24, 33, 38, 0.05);
+      color: var(--muted);
+      white-space: pre-wrap;
+    }
+
+    @media (max-width: 980px) {
+      .grid, .split, .row, .stat-grid { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+  <div class="shell">
+    <section class="hero">
+      <span class="pill">Telova Demo Workspace</span>
+      <h1>Turn ambition into an executable system.</h1>
+      <p>
+        Enter a goal, let Telova break it into a dependency-aware plan, add a few external events,
+        then trigger conflict scans and weekly reviews to watch the orchestration loop adapt.
+      </p>
+      <div class="stat-grid" id="stats"></div>
+    </section>
+
+    <section class="grid">
+      <div class="panel">
+        <h2>Create and steer goals</h2>
+        <div class="stack">
+          <div>
+            <label for="userId">User ID</label>
+            <input id="userId" value="demo-user">
+          </div>
+          <div>
+            <label for="goalText">Goal</label>
+            <textarea id="goalText">Get promoted to Senior Engineer in 6 months</textarea>
+          </div>
+          <div class="row">
+            <div>
+              <label for="goalDescription">Goal context</label>
+              <input id="goalDescription" placeholder="Current team, focus area, constraints">
+            </div>
+            <div>
+              <label for="goalDeadline">Deadline</label>
+              <input id="goalDeadline" type="datetime-local">
+            </div>
+          </div>
+        </div>
+        <div class="toolbar">
+          <button id="createGoalBtn">Create goal plan</button>
+          <button class="secondary" id="scanConflictsBtn">Run conflict scan</button>
+          <button class="ghost" id="weeklyReviewBtn">Run weekly review</button>
+        </div>
+        <div class="status" id="statusBox">Ready.</div>
+      </div>
+
+      <div class="panel">
+        <h2>Add external calendar pressure</h2>
+        <div class="stack">
+          <div>
+            <label for="eventTitle">Event title</label>
+            <input id="eventTitle" value="Team standup">
+          </div>
+          <div class="row">
+            <div>
+              <label for="eventStart">Start</label>
+              <input id="eventStart" type="datetime-local">
+            </div>
+            <div>
+              <label for="eventEnd">End</label>
+              <input id="eventEnd" type="datetime-local">
+            </div>
+          </div>
+          <div>
+            <label for="eventDescription">Description</label>
+            <input id="eventDescription" value="Recurring meeting imported from another system">
+          </div>
+          <button id="addEventBtn">Create external event</button>
+        </div>
+      </div>
+    </section>
+
+    <section class="grid">
+      <div class="panel">
+        <h2>Goals and tasks</h2>
+        <div class="cards" id="goalsList"></div>
+      </div>
+
+      <div class="panel">
+        <h2>Calendar and notes</h2>
+        <div class="split">
+          <div>
+            <h3>Upcoming events</h3>
+            <div class="cards" id="eventsList"></div>
+          </div>
+          <div>
+            <h3>Notes</h3>
+            <div class="cards" id="notesList"></div>
+          </div>
+        </div>
+      </div>
+    </section>
+  </div>
+
+  <script>
+    const statusBox = document.getElementById("statusBox");
+    const stats = document.getElementById("stats");
+    const goalsList = document.getElementById("goalsList");
+    const eventsList = document.getElementById("eventsList");
+    const notesList = document.getElementById("notesList");
+
+    function getUserId() {
+      return document.getElementById("userId").value.trim() || "demo-user";
+    }
+
+    function setStatus(message) {
+      statusBox.textContent = message;
+    }
+
+    function toIso(value) {
+      if (!value) return null;
+      const date = new Date(value);
+      return Number.isNaN(date.getTime()) ? null : date.toISOString();
+    }
+
+    function formatDate(value) {
+      if (!value) return "Unscheduled";
+      return new Date(value).toLocaleString();
+    }
+
+    async function fetchJson(url, options = {}) {
+      const response = await fetch(url, {
+        headers: { "Content-Type": "application/json" },
+        ...options,
+      });
+      if (!response.ok) {
+        const text = await response.text();
+        throw new Error(text || `Request failed with ${response.status}`);
+      }
+      return response.json();
+    }
+
+    function renderStats(data) {
+      const goals = data.goals || [];
+      const tasks = data.recent_tasks || [];
+      const events = data.upcoming_events || [];
+      const notes = data.notes || [];
+      stats.innerHTML = `
+        <div class="stat"><strong>${goals.length}</strong>Goals</div>
+        <div class="stat"><strong>${tasks.length}</strong>Recent tasks</div>
+        <div class="stat"><strong>${events.length}</strong>Upcoming events</div>
+        <div class="stat"><strong>${notes.length}</strong>Notes</div>
+      `;
+    }
+
+    async function markTaskDone(taskId) {
+      await fetchJson(`/api/v1/tasks/${taskId}`, {
+        method: "PATCH",
+        body: JSON.stringify({ status: "done" }),
+      });
+      setStatus("Marked task as done.");
+      await loadDashboard();
+    }
+
+    function renderGoals(data) {
+      const goals = data.goals || [];
+      const tasks = data.recent_tasks || [];
+
+      goalsList.innerHTML = goals.length ? goals.map(goal => {
+        const goalTasks = tasks.filter(task => task.goal_id === goal.id);
+        const taskHtml = goalTasks.map(task => `
+          <div class="card">
+            <span class="pill">${task.phase}</span>
+            <h3>${task.title}</h3>
+            <small>Status: ${task.status} | ${formatDate(task.scheduled_start)} to ${formatDate(task.scheduled_end)}</small>
+            ${task.status !== "done" ? `<div class="toolbar"><button class="ghost" onclick="markTaskDone('${task.id}')">Mark done</button></div>` : ""}
+          </div>
+        `).join("");
+
+        return `
+          <div class="card">
+            <span class="pill">${goal.domain.replaceAll("_", " ")}</span>
+            <h3>${goal.title}</h3>
+            <small>${goal.status} | Deadline: ${formatDate(goal.deadline)} | Deviation: ${(goal.deviation * 100).toFixed(0)}%</small>
+            <small class="muted">${goal.description || "No extra context provided yet."}</small>
+            <div class="cards" style="margin-top:12px">
+              ${taskHtml || '<div class="card"><small>No tasks yet.</small></div>'}
+            </div>
+          </div>
+        `;
+      }).join("") : '<div class="card"><small>No goals created yet.</small></div>';
+    }
+
+    function renderEvents(data) {
+      const events = data.upcoming_events || [];
+      eventsList.innerHTML = events.length ? events.map(event => `
+        <div class="card">
+          <span class="pill">${event.source}</span>
+          <h3>${event.title}</h3>
+          <small>${formatDate(event.start_at)} to ${formatDate(event.end_at)}</small>
+          <small>${event.description || "No description"}</small>
+        </div>
+      `).join("") : '<div class="card"><small>No upcoming events.</small></div>';
+    }
+
+    function renderNotes(data) {
+      const notes = data.notes || [];
+      notesList.innerHTML = notes.length ? notes.map(note => `
+        <div class="card">
+          <span class="pill">${note.note_type.replaceAll("_", " ")}</span>
+          <h3>${note.title}</h3>
+          <small>${new Date(note.created_at).toLocaleString()}</small>
+          <small>${note.content}</small>
+        </div>
+      `).join("") : '<div class="card"><small>No notes generated yet.</small></div>';
+    }
+
+    async function loadDashboard() {
+      const userId = getUserId();
+      const data = await fetchJson(`/api/v1/dashboard?user_id=${encodeURIComponent(userId)}`);
+      renderStats(data);
+      renderGoals(data);
+      renderEvents(data);
+      renderNotes(data);
+    }
+
+    async function createGoal() {
+      const payload = {
+        user_id: getUserId(),
+        goal: document.getElementById("goalText").value.trim(),
+        description: document.getElementById("goalDescription").value.trim() || null,
+        deadline: toIso(document.getElementById("goalDeadline").value),
+      };
+      setStatus("Creating plan...");
+      const result = await fetchJson("/api/v1/goals", {
+        method: "POST",
+        body: JSON.stringify(payload),
+      });
+      setStatus(`Created plan for "${result.goal.title}" with ${result.tasks.length} tasks.`);
+      await loadDashboard();
+    }
+
+    async function addExternalEvent() {
+      const payload = {
+        user_id: getUserId(),
+        title: document.getElementById("eventTitle").value.trim(),
+        description: document.getElementById("eventDescription").value.trim(),
+        start_at: toIso(document.getElementById("eventStart").value),
+        end_at: toIso(document.getElementById("eventEnd").value),
+        source: "external",
+      };
+      setStatus("Creating external event...");
+      await fetchJson("/api/v1/calendar/events", {
+        method: "POST",
+        body: JSON.stringify(payload),
+      });
+      setStatus("External event created.");
+      await loadDashboard();
+    }
+
+    async function runConflictScan() {
+      setStatus("Running conflict sentinel...");
+      const result = await fetchJson("/api/v1/webhooks/cron/conflict-check", {
+        method: "POST",
+        body: JSON.stringify({ user_id: getUserId(), auto_resolve: false }),
+      });
+      setStatus(result.length
+        ? `Found ${result.length} conflict(s).`
+        : "No conflicts found in the next scan window.");
+      await loadDashboard();
+    }
+
+    async function runWeeklyReview() {
+      setStatus("Running weekly review...");
+      const result = await fetchJson("/api/v1/webhooks/cron/weekly-review", {
+        method: "POST",
+        body: JSON.stringify({ user_id: getUserId() }),
+      });
+      setStatus(result.length
+        ? result.map(item => `${item.summary}`).join("\n")
+        : "No active goals found for weekly review.");
+      await loadDashboard();
+    }
+
+    document.getElementById("createGoalBtn").addEventListener("click", createGoal);
+    document.getElementById("addEventBtn").addEventListener("click", addExternalEvent);
+    document.getElementById("scanConflictsBtn").addEventListener("click", runConflictScan);
+    document.getElementById("weeklyReviewBtn").addEventListener("click", runWeeklyReview);
+    window.markTaskDone = markTaskDone;
+
+    const now = new Date();
+    const inTwoHours = new Date(now.getTime() + 2 * 60 * 60 * 1000);
+    const inThreeHours = new Date(now.getTime() + 3 * 60 * 60 * 1000);
+    document.getElementById("eventStart").value = inTwoHours.toISOString().slice(0, 16);
+    document.getElementById("eventEnd").value = inThreeHours.toISOString().slice(0, 16);
+
+    loadDashboard().catch(error => setStatus(error.message));
+  </script>
+</body>
+</html>
+
+

@@ -1,0 +1,37 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "telova-api"
+version = "0.1.0"
+description = "Telova goal-to-execution orchestrator for the Google multi-agent hackathon."
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+  "fastapi>=0.135,<0.136",
+  "uvicorn[standard]",
+  "sqlalchemy",
+  "aiosqlite",
+  "pydantic",
+  "mcp",
+]
+
+[project.optional-dependencies]
+dev = [
+  "httpx",
+  "pytest",
+  "pytest-asyncio",
+]
+gcp = [
+  "google-cloud-alloydb-connector[asyncpg]",
+  "asyncpg",
+]
+
+[tool.setuptools.packages.find]
+include = ["telova_api*"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+

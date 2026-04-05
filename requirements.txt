@@ -1,0 +1,6 @@
+fastapi>=0.135,<0.136
+uvicorn[standard]
+sqlalchemy
+aiosqlite
+pydantic
+mcp
