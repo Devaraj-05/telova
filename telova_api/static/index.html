@@ -3,153 +3,180 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="color-scheme" content="light">
   <title>Telova</title>
-  <link rel="stylesheet" href="/static/app.css">
-  <script defer src="/static/app.js"></script>
+  <link rel="stylesheet" href="/static/app.css?v=20260406e">
+  <script defer src="/static/app.js?v=20260406e"></script>
 </head>
 <body>
-  <div class="page-glow"></div>
+  <div class="app-backdrop"></div>
 
   <section class="welcome-screen" id="welcomeScreen">
-    <div class="welcome-panel">
-      <div class="brand-lockup">
-        <div class="logo-mark" aria-hidden="true">
-          <span class="logo-dot"></span>
+    <div class="welcome-card hero-card">
+      <div class="hero-top">
+        <div class="brand-lockup">
+          <div class="brand-symbol" aria-hidden="true">
+            <svg viewBox="0 0 122 72" role="presentation">
+              <path d="M18 58V18H72" fill="none" stroke="#4F46E5" stroke-width="16" stroke-linecap="round" stroke-linejoin="round"></path>
+              <circle cx="76" cy="16" r="12" fill="#ffffff" stroke="#10B981" stroke-width="8"></circle>
+            </svg>
+          </div>
+          <div>
+            <p class="eyebrow">Primary lockup</p>
+            <h1>telova</h1>
+          </div>
         </div>
-        <div>
-          <p class="eyebrow">Primary lockup</p>
-          <h1>telova</h1>
-        </div>
+        <span class="status-badge">AI Execution Companion</span>
       </div>
 
-      <div class="welcome-copy">
-        <span class="pill pill-brand">AI Execution Companion</span>
+      <div class="hero-copy">
         <h2>Chat with your goals until they become scheduled work.</h2>
         <p>
-          Telova is a chat-first command center. Ask it to create goals, review
-          progress, inspect calendar pressure, capture notes, and adapt plans
-          without switching into manual forms.
+          Telova is a calm, intelligent command center for planning and execution.
+          The user talks to one agent interface, and Telova handles intake, task DAG
+          previews, approval, syncing, progress tracking, and re-planning.
         </p>
       </div>
 
-      <div class="welcome-highlights">
-        <div class="highlight-card">
-          <strong>Goal intake in chat</strong>
+      <div class="hero-grid">
+        <article class="feature-panel">
+          <h3>Goal intake in chat</h3>
           <p>The agent asks for deadline, constraints, and priority before it drafts anything.</p>
-        </div>
-        <div class="highlight-card">
-          <strong>Approve inside the thread</strong>
-          <p>Task DAG previews appear in chat first. Creation and syncing happen only after approval.</p>
-        </div>
-        <div class="highlight-card">
-          <strong>Automatic sync after approval</strong>
+        </article>
+        <article class="feature-panel">
+          <h3>Approve inside the thread</h3>
+          <p>Task DAG previews appear in chat first. Creation and syncing only happen after approval.</p>
+        </article>
+        <article class="feature-panel">
+          <h3>Automatic sync after approval</h3>
           <p>Tasks, schedule, notes, and dashboard context update without manual intervention.</p>
+        </article>
+      </div>
+
+      <div class="hero-preview">
+        <div class="preview-window">
+          <div class="preview-bubble assistant">
+            <strong>Telova</strong>
+            <p>Tell me the goal you want to achieve. I'll collect the missing planning details here.</p>
+          </div>
+          <div class="preview-bubble user">
+            <p>Help me get promoted to Senior Engineer in 6 months.</p>
+          </div>
+          <div class="preview-bubble assistant">
+            <strong>Telova</strong>
+            <p>Great. I still need your constraints and priority before I draft the DAG preview.</p>
+          </div>
         </div>
       </div>
     </div>
 
-    <div class="signin-panel">
-      <div class="signin-card">
-        <div>
-          <span class="pill pill-soft">Welcome</span>
-          <h3>Open your Telova workspace</h3>
-          <p>Use demo credentials locally, or add your deployed API key for protected cloud endpoints.</p>
+    <div class="welcome-card auth-card">
+      <div class="auth-head">
+        <span class="eyebrow">Welcome</span>
+        <h3>Open your Telova workspace</h3>
+        <p>Use demo credentials locally, or add your deployed API key for protected cloud endpoints.</p>
+      </div>
+
+      <label class="field-group">
+        <span>Email</span>
+        <input id="welcomeEmail" class="input" type="email" value="devaraj@telova.ai" placeholder="devaraj@telova.ai">
+      </label>
+
+      <label class="field-group">
+        <span>Password / API Key</span>
+        <input id="welcomePassword" class="input" type="password" value="demo-pass" placeholder="Enter password or API key">
+      </label>
+
+      <div class="auth-actions">
+        <button id="enterWorkspaceButton" class="button button-primary" type="button">Enter workspace</button>
+        <button id="continueGoogleButton" class="button button-secondary" type="button">Continue with Google</button>
+      </div>
+
+      <div class="auth-meta">
+        <div class="meta-chip">
+          <strong>Chat-first</strong>
+          <span>No manual forms</span>
         </div>
-
-        <label class="field-group">
-          <span>Email</span>
-          <input id="welcomeEmail" class="input" type="email" value="devaraj@telova.ai" placeholder="devaraj@telova.ai">
-        </label>
-
-        <label class="field-group">
-          <span>Password / API Key</span>
-          <input id="welcomePassword" class="input" type="password" value="demo-pass" placeholder="Enter password or API key">
-        </label>
-
-        <div class="signin-actions">
-          <button id="enterWorkspaceButton" class="button button-primary" type="button">Enter workspace</button>
-          <button id="continueGoogleButton" class="button button-secondary" type="button">Continue with Google</button>
+        <div class="meta-chip">
+          <strong>Auto-sync</strong>
+          <span>Calendar, tasks, notes</span>
         </div>
-
-        <div class="signin-meta">
-          <div>
-            <strong>Chat-first</strong>
-            <span>No manual forms</span>
-          </div>
-          <div>
-            <strong>Auto-sync</strong>
-            <span>Calendar, tasks, notes</span>
-          </div>
-          <div>
-            <strong>Cloud ready</strong>
-            <span>Run, AlloyDB, Scheduler</span>
-          </div>
+        <div class="meta-chip">
+          <strong>Cloud ready</strong>
+          <span>Run, AlloyDB, Scheduler</span>
         </div>
       </div>
     </div>
   </section>
 
   <div class="app-shell is-hidden" id="appShell">
-    <aside class="sidebar">
+    <aside class="shell-panel sidebar-panel">
       <div class="sidebar-section">
         <div class="brand-lockup compact">
-          <div class="logo-mark small" aria-hidden="true">
-            <span class="logo-dot"></span>
+          <div class="brand-symbol compact" aria-hidden="true">
+            <svg viewBox="0 0 122 72" role="presentation">
+              <path d="M18 58V18H72" fill="none" stroke="#4F46E5" stroke-width="16" stroke-linecap="round" stroke-linejoin="round"></path>
+              <circle cx="76" cy="16" r="12" fill="#ffffff" stroke="#10B981" stroke-width="8"></circle>
+            </svg>
           </div>
           <div>
             <p class="eyebrow">Command center</p>
-            <strong class="brand-title">telova</strong>
-          </div>
-        </div>
-
-        <div class="workspace-card">
-          <div class="profile-avatar" id="profileAvatar">DV</div>
-          <div>
-            <strong id="profileName">Devaraj</strong>
-            <p id="profileRole">Operator, demo-user</p>
+            <h4>telova</h4>
           </div>
         </div>
       </div>
 
+      <div class="sidebar-section profile-block">
+        <div class="profile-avatar" id="profileAvatar">DV</div>
+        <div>
+          <strong id="profileName">Devaraj</strong>
+          <p id="profileRole">Operator, demo-user</p>
+        </div>
+      </div>
+
       <div class="sidebar-section">
-        <p class="section-label">Quick prompts</p>
+        <div class="section-head">
+          <p class="eyebrow">Quick prompts</p>
+        </div>
         <div class="prompt-list" id="quickPromptList"></div>
       </div>
 
       <div class="sidebar-section">
-        <div class="section-header">
-          <p class="section-label">Goals</p>
-          <span class="section-count" id="goalCount">0</span>
+        <div class="section-head">
+          <p class="eyebrow">Goals</p>
+          <span class="count-pill" id="goalCount">0</span>
         </div>
         <div class="goal-list" id="goalList"></div>
       </div>
 
       <div class="sidebar-section">
-        <p class="section-label">Connections</p>
+        <div class="section-head">
+          <p class="eyebrow">Connections</p>
+        </div>
         <div class="connection-list" id="sidebarConnections"></div>
       </div>
     </aside>
 
-    <main class="chat-workspace">
-      <header class="workspace-header">
+    <main class="shell-panel chat-panel">
+      <header class="chat-header">
         <div>
           <p class="eyebrow">Agent chat</p>
           <h2 id="workspaceTitle">Telova Workspace</h2>
-          <p class="workspace-subtitle" id="workspaceSubtitle">
-            Ask about goals, schedule, tasks, notes, progress, or tell Telova what you want to achieve next.
+          <p class="chat-subtitle" id="workspaceSubtitle">
+            Ask about goals, calendar pressure, task progress, notes, conflicts, or tell Telova what you want to achieve next.
           </p>
         </div>
-        <div class="header-status">
+        <div class="header-side">
           <span class="status-pill" id="workspaceStatus">Workspace ready</span>
         </div>
       </header>
 
       <section class="chat-thread" id="chatThread"></section>
 
-      <footer class="composer-shell">
+      <footer class="composer-wrap">
         <div class="composer-suggestions" id="suggestionRow"></div>
         <div class="composer-card">
-          <textarea id="chatComposer" class="composer-input" rows="1" placeholder="Message Telova. Example: Help me get promoted to Senior Engineer in 6 months."></textarea>
+          <textarea id="chatComposer" class="composer-input" rows="1" placeholder="Message Telova. Example: Help me launch my interview prep plan in 8 weeks."></textarea>
           <button id="sendMessageButton" class="button button-primary" type="button">Send</button>
         </div>
         <p class="composer-note">
@@ -158,9 +185,9 @@
       </footer>
     </main>
 
-    <aside class="context-rail">
-      <article class="surface-card">
-        <div class="card-header">
+    <aside class="context-column">
+      <article class="shell-panel insight-card">
+        <div class="section-head">
           <div>
             <p class="eyebrow">Current lane</p>
             <h3>Goal snapshot</h3>
@@ -169,8 +196,8 @@
         <div id="contextGoal"></div>
       </article>
 
-      <article class="surface-card">
-        <div class="card-header">
+      <article class="shell-panel insight-card">
+        <div class="section-head">
           <div>
             <p class="eyebrow">Execution</p>
             <h3>Task progress</h3>
@@ -179,8 +206,8 @@
         <div id="contextProgress"></div>
       </article>
 
-      <article class="surface-card">
-        <div class="card-header">
+      <article class="shell-panel insight-card">
+        <div class="section-head">
           <div>
             <p class="eyebrow">Today</p>
             <h3>Schedule</h3>
@@ -189,8 +216,8 @@
         <div id="contextSchedule"></div>
       </article>
 
-      <article class="surface-card">
-        <div class="card-header">
+      <article class="shell-panel insight-card">
+        <div class="section-head">
           <div>
             <p class="eyebrow">Memory</p>
             <h3>Recent notes</h3>
@@ -199,8 +226,8 @@
         <div id="contextNotes"></div>
       </article>
 
-      <article class="surface-card">
-        <div class="card-header">
+      <article class="shell-panel insight-card">
+        <div class="section-head">
           <div>
             <p class="eyebrow">System</p>
             <h3>Sync and health</h3>
@@ -213,7 +240,7 @@
 
   <div class="loading-modal is-hidden" id="loadingModal">
     <div class="loading-card">
-      <div class="loading-ring"></div>
+      <div class="loading-orbit"></div>
       <p class="eyebrow">Telova agent</p>
       <h3 id="loadingTitle">Working on it</h3>
       <p id="loadingMessage">Refreshing the workspace.</p>

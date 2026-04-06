@@ -136,7 +136,7 @@ function ensureConversation() {
     title: "Telova is ready",
     text: state.goals.length
       ? "Ask me about your active goals, progress, upcoming schedule, notes, conflicts, or tell me what new goal you want to plan."
-      : "Tell me the goal you want to achieve. I’ll collect the missing deadline, constraints, and priority before I draft your plan.",
+      : "Tell me the goal you want to achieve. I'll collect the missing deadline, constraints, and priority before I draft your plan.",
     cards: buildWorkspaceSummaryCards(),
     actions: [
       { action: "send-prompt", prompt: "Help me create a new goal.", label: "Create a goal", variant: "primary" },
@@ -173,7 +173,7 @@ function renderSuggestionRow() {
         { action: "approve-plan", label: "Approve plan" },
         { action: "revise-plan", label: "Request changes" },
         { action: "send-prompt", prompt: "Show me the tasks in the preview again.", label: "Preview tasks" },
-        { action: "send-prompt", prompt: "What’s due today?", label: "Today’s schedule" },
+        { action: "send-prompt", prompt: "What's due today?", label: "Today's schedule" },
       ]
     : state.goalDraft
     ? [
@@ -422,7 +422,7 @@ async function handleUserMessage(text) {
   }
 
   addAssistantMessage({
-    text: "I can help with goal planning, schedule questions, task progress, note capture, conflict scans, weekly reviews, and system sync status. Tell me what you want to achieve, or ask something like “What should I do next?”",
+    text: "I can help with goal planning, schedule questions, task progress, note capture, conflict scans, weekly reviews, and system sync status. Tell me what you want to achieve, or ask something like \"What should I do next?\"",
     actions: [
       { action: "send-prompt", prompt: "Help me create a new goal.", label: "Create a goal", variant: "primary" },
       { action: "send-prompt", prompt: "What should I do next?", label: "What should I do next?", variant: "secondary" },
@@ -446,7 +446,7 @@ async function startGoalDraft(text) {
 
   if (!extractedGoal) {
     addAssistantMessage({
-      text: "What is the goal you want me to plan? Give me the outcome in one sentence, and I’ll take it from there.",
+      text: "What is the goal you want me to plan? Give me the outcome in one sentence, and I'll take it from there.",
     });
     renderAll();
     return;
@@ -454,7 +454,7 @@ async function startGoalDraft(text) {
 
   addAssistantMessage({
     title: "Goal intake started",
-    text: `I’m planning for "${extractedGoal}". I’ll collect the missing details here, then I’ll preview the task DAG in chat before anything is created.`,
+    text: `I'm planning for "${extractedGoal}". I'll collect the missing details here, then I'll preview the task DAG in chat before anything is created.`,
   });
   await askNextGoalQuestionOrPreview();
 }
@@ -471,7 +471,7 @@ async function continueGoalDraft(text) {
     const deadline = parseDeadlineInput(text);
     if (!deadline) {
       addAssistantMessage({
-        text: "I couldn’t read that deadline. Try something like “in 6 months”, “by 2026-09-30”, or “next Friday”.",
+        text: "I couldn't read that deadline. Try something like \"in 6 months\", \"by 2026-09-30\", or \"next Friday\".",
       });
       renderAll();
       return;
@@ -521,7 +521,7 @@ async function askNextGoalQuestionOrPreview() {
   if (!draft.deadline) {
     draft.awaiting = "deadline";
     addAssistantMessage({
-      text: "What deadline should I plan against? You can reply with “in 6 months”, “by 2026-09-30”, or something similar.",
+      text: "What deadline should I plan against? You can reply with \"in 6 months\", \"by 2026-09-30\", or something similar.",
     });
     renderAll();
     return;
@@ -530,7 +530,7 @@ async function askNextGoalQuestionOrPreview() {
   if (!draft.constraintsConfirmed) {
     draft.awaiting = "constraints";
     addAssistantMessage({
-      text: "Any constraints I should respect while scheduling? Examples: weekdays only, 1 hour per day, avoid late evenings. Reply with “none” if there are no constraints.",
+      text: "Any constraints I should respect while scheduling? Examples: weekdays only, 1 hour per day, avoid late evenings. Reply with \"none\" if there are no constraints.",
     });
     renderAll();
     return;
@@ -582,7 +582,7 @@ async function previewGoalDraft() {
     setStatus("Preview ready");
   } catch (error) {
     addAssistantMessage({
-      text: `I couldn’t generate the preview: ${readError(error)}`,
+      text: `I couldn't generate the preview: ${readError(error)}`,
     });
     setStatus(readError(error));
   } finally {
@@ -610,7 +610,7 @@ async function handlePendingPreviewResponse(text) {
   }
 
   addAssistantMessage({
-    text: "I have the preview ready. Say “approve”, click Approve plan, or tell me what you want changed and I’ll re-draft it.",
+    text: "I have the preview ready. Say \"approve\", click Approve plan, or tell me what you want changed and I'll re-draft it.",
     actions: [
       { action: "approve-plan", label: "Approve plan", variant: "primary" },
       { action: "revise-plan", label: "Request changes", variant: "secondary" },
@@ -659,13 +659,13 @@ async function approvePendingPlan() {
       ],
       actions: [
         { action: "send-prompt", prompt: "What should I do next?", label: "What should I do next?", variant: "primary" },
-        { action: "send-prompt", prompt: "What’s due today?", label: "What’s due today?", variant: "secondary" },
+        { action: "send-prompt", prompt: "What's due today?", label: "What's due today?", variant: "secondary" },
       ],
     });
     setStatus("Goal created and synced");
   } catch (error) {
     addAssistantMessage({
-      text: `I couldn’t create the goal: ${readError(error)}`,
+      text: `I couldn't create the goal: ${readError(error)}`,
     });
     setStatus(readError(error));
   } finally {
@@ -768,7 +768,7 @@ function answerNextAction() {
 
   if (!goal || !nextTask) {
     addAssistantMessage({
-      text: "There isn’t an active next task right now. You can create a new goal or ask me to review your current workspace.",
+      text: "There isn't an active next task right now. You can create a new goal or ask me to review your current workspace.",
     });
     renderAll();
     return;
@@ -818,7 +818,7 @@ function answerProgress() {
   const tasks = goal ? tasksForGoal(goal.id) : state.tasks;
   if (!tasks.length) {
     addAssistantMessage({
-      text: "There are no task lanes to review yet. Create a goal and I’ll start tracking progress automatically.",
+      text: "There are no task lanes to review yet. Create a goal and I'll start tracking progress automatically.",
     });
     renderAll();
     return;
@@ -872,7 +872,7 @@ function answerTasks() {
 function answerGoals() {
   if (!state.goals.length) {
     addAssistantMessage({
-      text: "There are no goals in the workspace yet. Tell me what you want to achieve and I’ll plan it with you in chat.",
+      text: "There are no goals in the workspace yet. Tell me what you want to achieve and I'll plan it with you in chat.",
     });
     renderAll();
     return;
@@ -893,7 +893,7 @@ function answerNotes() {
   const notes = relatedNotes().slice(0, 5);
   if (!notes.length) {
     addAssistantMessage({
-      text: "There are no recent notes in memory yet. You can say “remember that ...” and I’ll save it into the current workspace.",
+      text: "There are no recent notes in memory yet. You can say \"remember that ...\" and I'll save it into the current workspace.",
     });
     renderAll();
     return;
@@ -953,7 +953,7 @@ async function runConflictScanInChat() {
     });
     setStatus("Conflict scan complete");
   } catch (error) {
-    addAssistantMessage({ text: `I couldn’t run the conflict scan: ${readError(error)}` });
+    addAssistantMessage({ text: `I couldn't run the conflict scan: ${readError(error)}` });
     setStatus(readError(error));
   } finally {
     hideLoading();
@@ -987,7 +987,7 @@ async function runWeeklyReviewInChat() {
     });
     setStatus("Weekly review complete");
   } catch (error) {
-    addAssistantMessage({ text: `I couldn’t run the weekly review: ${readError(error)}` });
+    addAssistantMessage({ text: `I couldn't run the weekly review: ${readError(error)}` });
     setStatus(readError(error));
   } finally {
     hideLoading();
@@ -999,7 +999,7 @@ async function updateTaskFromChat(text) {
   const target = findTaskFromText(text);
   if (!target) {
     addAssistantMessage({
-      text: "I couldn’t confidently match that task. Ask me “What should I do next?” first, or mention more of the task title.",
+      text: "I couldn't confidently match that task. Ask me \"What should I do next?\" first, or mention more of the task title.",
     });
     renderAll();
     return;
@@ -1017,7 +1017,7 @@ async function updateTaskFromChat(text) {
     });
     renderAll();
   } catch (error) {
-    addAssistantMessage({ text: `I couldn’t update the task: ${readError(error)}` });
+    addAssistantMessage({ text: `I couldn't update the task: ${readError(error)}` });
     renderAll();
   }
 }
@@ -1026,7 +1026,7 @@ async function saveNoteFromChat(text) {
   const content = extractNoteText(text);
   if (!content) {
     addAssistantMessage({
-      text: "Tell me what you want me to remember, for example: “Remember that I should avoid interviews on Fridays.”",
+      text: "Tell me what you want me to remember, for example: \"Remember that I should avoid interviews on Fridays.\"",
     });
     renderAll();
     return;
@@ -1049,7 +1049,7 @@ async function saveNoteFromChat(text) {
     });
     renderAll();
   } catch (error) {
-    addAssistantMessage({ text: `I couldn’t save the note: ${readError(error)}` });
+    addAssistantMessage({ text: `I couldn't save the note: ${readError(error)}` });
     renderAll();
   }
 }
@@ -1062,11 +1062,11 @@ async function refreshWorkspaceInChat() {
   try {
     await loadWorkspace();
     addAssistantMessage({
-      text: "Workspace refreshed. I’m using the latest goals, tasks, notes, and calendar data now.",
+      text: "Workspace refreshed. I'm using the latest goals, tasks, notes, and calendar data now.",
     });
     setStatus("Workspace refreshed");
   } catch (error) {
-    addAssistantMessage({ text: `I couldn’t refresh the workspace: ${readError(error)}` });
+    addAssistantMessage({ text: `I couldn't refresh the workspace: ${readError(error)}` });
     setStatus(readError(error));
   } finally {
     hideLoading();
@@ -1605,7 +1605,7 @@ function goalTitle(goalId) {
 }
 
 function truncate(text, max) {
-  return text.length > max ? `${text.slice(0, max - 1)}…` : text;
+  return text.length > max ? `${text.slice(0, max - 3)}...` : text;
 }
 
 function sameDay(left, right) {
