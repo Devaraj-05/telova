@@ -131,6 +131,7 @@ Edit `infra/gcp/cloudrun.env.yaml` and set:
 - `API_KEY_SECRET`
 - `CRON_SHARED_TOKEN_SECRET`
 - `ADK_MODEL=gemini-2.5-flash` if you enable the Google ADK runtime
+- `GOOGLE_GENAI_USE_VERTEXAI=true`, `GOOGLE_CLOUD_PROJECT`, and `GOOGLE_CLOUD_LOCATION=global` if you want the Data Analyst to use Gemini 2.5 directly instead of AlloyDB AI NL
 
 Notes:
 
@@ -138,6 +139,7 @@ Notes:
 - You can deploy first with `CLOUD_RUN_SERVICE_URL` blank, then update it after the first deployment.
 - If you want Gemini on Vertex AI for ADK planning, also keep `GOOGLE_GENAI_USE_VERTEXAI=true`, `GOOGLE_CLOUD_PROJECT`, and `GOOGLE_CLOUD_LOCATION` in the environment.
 - Telova's own Vertex AI runtime can use `gemini-2.5-flash`, but AlloyDB AI natural language is currently documented by Google as using `gemini-2.0-flash:generateContent` for `g_create_configuration()`. If you need strict `2.5+` model usage for app-side generation, use Telova's Google ADK / Gemini runtime and treat AlloyDB AI NL as an optional database-native feature.
+- For a strict `gemini-2.5+` data path, set `ALLOYDB_AI_NL_ENABLED=false` and keep the Vertex AI Gemini settings enabled. Telova's Data Analyst will generate SQL with Gemini 2.5 in the app and execute it against AlloyDB.
 
 ## 6. Run migrations and smoke test in Cloud Shell
 

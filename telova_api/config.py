@@ -46,6 +46,10 @@ class Settings:
     google_calendar_id: str
     google_tasks_tasklist_id: str | None
     google_keep_enabled: bool
+    google_genai_use_vertexai: bool
+    google_cloud_project: str | None
+    google_cloud_location: str
+    google_api_key: str | None
     adk_model: str
     adk_app_name: str
     api_auth_mode: str
@@ -158,6 +162,20 @@ def get_settings() -> Settings:
         google_tasks_tasklist_id=os.getenv("GOOGLE_TASKS_TASKLIST_ID") or None,
         google_keep_enabled=_as_bool(
             os.getenv("GOOGLE_KEEP_ENABLED", "false")
+        ),
+        google_genai_use_vertexai=_as_bool(
+            os.getenv("GOOGLE_GENAI_USE_VERTEXAI", "false")
+        ),
+        google_cloud_project=(
+            os.getenv("GOOGLE_CLOUD_PROJECT")
+            or os.getenv("GCP_PROJECT_ID")
+            or None
+        ),
+        google_cloud_location=os.getenv("GOOGLE_CLOUD_LOCATION", "global"),
+        google_api_key=(
+            os.getenv("GOOGLE_API_KEY")
+            or os.getenv("GEMINI_API_KEY")
+            or None
         ),
         adk_model=os.getenv("ADK_MODEL", "gemini-2.5-flash"),
         adk_app_name=os.getenv("ADK_APP_NAME", "telova"),

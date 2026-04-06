@@ -65,3 +65,4 @@ ALLOYDB_PASSWORD_SECRET: "telova-alloydb-password"
 - If AlloyDB AI natural language is available, Telova uses it to generate SQL against the curated secure views.
 - If it is not available, Telova falls back to deterministic SQL templates so the local app and tests still work.
 - Telova's application-side Gemini runtime is configured around `gemini-2.5-flash`, but AlloyDB AI natural language currently documents `gemini-2.0-flash:generateContent` as its managed model endpoint. That model choice is controlled by the AlloyDB AI feature, not by Telova's `ADK_MODEL` setting.
+- If you require `gemini-2.5+` only, disable `ALLOYDB_AI_NL_ENABLED` and let Telova's Data Analyst use Gemini 2.5 directly through Vertex AI while still executing the generated SQL on AlloyDB.

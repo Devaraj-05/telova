@@ -172,7 +172,11 @@ def test_analytics_and_telemetry_endpoints(client: TestClient):
     analytics = analytics_response.json()
     assert analytics["generated_sql"]
     assert analytics["row_count"] >= 1
-    assert analytics["execution_mode"] in {"deterministic_sql", "alloydb_ai_nl"}
+    assert analytics["execution_mode"] in {
+        "deterministic_sql",
+        "alloydb_ai_nl",
+        "vertex_gemini_nl_sql",
+    }
 
     agent_runs_response = client.get(
         "/api/v1/agent-runs",

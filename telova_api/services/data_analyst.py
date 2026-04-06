@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+import asyncio
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
+import json
 import re
 from typing import Any
 
@@ -59,6 +61,32 @@ class ProductivityDataAnalystService:
     ) -> dict[str, Any]:
         fallback_reason = None
 
+        if self._can_use_vertex_gemini():
+            try:
+                generated_sql = await self._generate_vertex_sql(
+                    user_id=user_id,
+                    question=question,
+                )
+                cleaned_sql = self._normalize_sql_text(generated_sql)
+                source_objects = self._validate_ai_sql(cleaned_sql)
+                rows = await self._execute_sql(
+                    cleaned_sql,
+                    params={"result_limit": limit},
+                    workspace_user=user_id,
+                )
+                return {
+                    "question": question,
+                    "summary": self._summarize_rows(question, rows),
+                    "generated_sql": cleaned_sql,
+                    "rows": rows,
+                    "row_count": len(rows),
+                    "execution_mode": "vertex_gemini_nl_sql",
+                    "source_objects": source_objects,
+                    "fallback_reason": None,
+                }
+            except Exception as exc:
+                fallback_reason = str(exc)
+
         if self._can_use_alloydb_ai():
             try:
                 generated_sql = await self._generate_alloydb_sql(
@@ -70,6 +98,7 @@ class ProductivityDataAnalystService:
                 rows = await self._execute_sql(
                     cleaned_sql,
                     params={"result_limit": limit},
+                    workspace_user=user_id,
                 )
                 return {
                     "question": question,
@@ -89,7 +118,11 @@ class ProductivityDataAnalystService:
             question=question,
             limit=limit,
         )
-        rows = await self._execute_sql(plan.sql, params=plan.params)
+        rows = await self._execute_sql(
+            plan.sql,
+            params=plan.params,
+            workspace_user=user_id,
+        )
         return {
             "question": question,
             "summary": self._summarize_rows(question, rows),
@@ -102,6 +135,15 @@ class ProductivityDataAnalystService:
         }
 
     def describe_status(self) -> dict[str, str]:
+        if self._can_use_vertex_gemini():
+            return {
+                "name": "Gemini SQL Analyst",
+                "status": "ready",
+                "detail": (
+                    f"Using {self.settings.adk_model} to generate read-only SQL "
+                    "against Telova's curated secure views."
+                ),
+            }
         if self._can_use_alloydb_ai():
             return {
                 "name": "AlloyDB AI Analyst",
@@ -120,6 +162,17 @@ class ProductivityDataAnalystService:
             ),
         }
 
+    def _can_use_vertex_gemini(self) -> bool:
+        model = (self.settings.adk_model or "").strip()
+        if not model:
+            return False
+        if self.settings.google_genai_use_vertexai:
+            return bool(
+                self.settings.google_cloud_project
+                and self.settings.google_cloud_location
+            )
+        return bool(self.settings.google_api_key)
+
     def _can_use_alloydb_ai(self) -> bool:
         dialect = self.session.bind.dialect.name if self.session.bind else ""
         return bool(
@@ -128,11 +181,27 @@ class ProductivityDataAnalystService:
             and dialect == "postgresql"
         )
 
-    async def _generate_alloydb_sql(self, *, user_id: str, question: str) -> str:
+    async def _set_workspace_user(self, user_id: str) -> None:
+        dialect = self.session.bind.dialect.name if self.session.bind else ""
+        if dialect != "postgresql":
+            return
         await self.session.execute(
             text("SELECT set_config('telova.user_id', :user_id, true)"),
             {"user_id": user_id},
         )
+
+    async def _generate_vertex_sql(self, *, user_id: str, question: str) -> str:
+        await self._set_workspace_user(user_id)
+        prompt = self._build_vertex_prompt(question)
+        raw_response = await asyncio.to_thread(self._call_vertex_model, prompt)
+        payload = self._parse_model_json(raw_response)
+        sql = payload.get("sql")
+        if not isinstance(sql, str) or not sql.strip():
+            raise RuntimeError("Gemini did not return a SQL statement.")
+        return sql
+
+    async def _generate_alloydb_sql(self, *, user_id: str, question: str) -> str:
+        await self._set_workspace_user(user_id)
         result = await self.session.execute(
             text(
                 """
@@ -158,9 +227,81 @@ class ProductivityDataAnalystService:
         sql_text: str,
         *,
         params: dict[str, Any] | None = None,
+        workspace_user: str | None = None,
     ) -> list[dict[str, Any]]:
+        if workspace_user:
+            await self._set_workspace_user(workspace_user)
         result = await self.session.execute(text(sql_text), params or {})
         return [dict(row) for row in result.mappings().all()]
+
+    def _call_vertex_model(self, prompt: str) -> str:
+        try:
+            from google import genai
+            from google.genai import types
+        except ImportError as exc:
+            raise RuntimeError(
+                "Gemini SQL generation requires the google-genai package."
+            ) from exc
+
+        if self.settings.google_genai_use_vertexai:
+            client = genai.Client(
+                vertexai=True,
+                project=self.settings.google_cloud_project,
+                location=self.settings.google_cloud_location,
+                http_options=types.HttpOptions(api_version="v1"),
+            )
+        else:
+            client = genai.Client(
+                api_key=self.settings.google_api_key,
+                http_options=types.HttpOptions(api_version="v1"),
+            )
+
+        try:
+            response = client.models.generate_content(
+                model=self.settings.adk_model,
+                contents=prompt,
+            )
+            text_response = getattr(response, "text", "") or ""
+        finally:
+            try:
+                client.close()
+            except Exception:
+                pass
+
+        if not text_response.strip():
+            raise RuntimeError("Gemini returned an empty response.")
+        return text_response
+
+    def _build_vertex_prompt(self, question: str) -> str:
+        return (
+            "You are Telova's SQL analyst.\n"
+            "Return only a JSON object with keys sql and source_objects.\n"
+            "Generate exactly one read-only PostgreSQL SELECT statement.\n"
+            "Use only these views: public.telova_goal_execution_secure, "
+            "public.telova_schedule_pressure_secure, public.telova_agent_activity_secure.\n"
+            "Do not reference any other tables, views, or schemas.\n"
+            "The secure views are already scoped by current_setting('telova.user_id', true).\n"
+            "Prefer concise SQL and include ORDER BY when useful.\n"
+            "Question: "
+            f"{question}"
+        )
+
+    def _parse_model_json(self, raw_response: str) -> dict[str, Any]:
+        cleaned = raw_response.strip()
+        cleaned = re.sub(r"^```(?:json)?", "", cleaned, flags=re.IGNORECASE).strip()
+        cleaned = re.sub(r"```$", "", cleaned).strip()
+        try:
+            parsed = json.loads(cleaned)
+        except json.JSONDecodeError:
+            start = cleaned.find("{")
+            end = cleaned.rfind("}")
+            if start == -1 or end == -1 or end <= start:
+                raise RuntimeError("Gemini returned a non-JSON SQL payload.") from None
+            parsed = json.loads(cleaned[start : end + 1])
+
+        if not isinstance(parsed, dict):
+            raise RuntimeError("Gemini returned an unexpected JSON shape.")
+        return parsed
 
     def _build_fallback_plan(
         self,
