@@ -1,4 +1,14 @@
-CREATE EXTENSION IF NOT EXISTS alloydb_ai_nl CASCADE;
+DO $$
+BEGIN
+    BEGIN
+        CREATE EXTENSION IF NOT EXISTS alloydb_ai_nl CASCADE;
+    EXCEPTION
+        WHEN OTHERS THEN
+            RAISE NOTICE
+                'AlloyDB AI natural language extension is unavailable. Enable the database flag alloydb_ai_nl.enabled on the AlloyDB instance, then rerun this script. Error: %',
+                SQLERRM;
+    END;
+END $$;
 
 CREATE OR REPLACE VIEW public.telova_goal_execution_view AS
 SELECT
@@ -83,93 +93,155 @@ COMMENT ON VIEW public.telova_agent_activity_secure IS
 
 DO $$
 BEGIN
-    PERFORM alloydb_ai_nl.g_create_configuration('telova_nl');
-EXCEPTION
-    WHEN OTHERS THEN
-        NULL;
+    IF NOT EXISTS (
+        SELECT 1
+        FROM pg_extension
+        WHERE extname = 'alloydb_ai_nl'
+    ) THEN
+        RAISE NOTICE
+            'Skipping AlloyDB AI natural language configuration because the extension is not installed.';
+        RETURN;
+    END IF;
+
+    BEGIN
+        PERFORM alloydb_ai_nl.g_create_configuration('telova_nl');
+    EXCEPTION
+        WHEN OTHERS THEN
+            RAISE NOTICE 'Configuration telova_nl may already exist or could not be created: %', SQLERRM;
+    END;
+
+    BEGIN
+        PERFORM alloydb_ai_nl.g_manage_configuration(
+            operation => 'register_table_view',
+            configuration_id_in => 'telova_nl',
+            table_views_in => '{public.telova_goal_execution_secure,public.telova_schedule_pressure_secure,public.telova_agent_activity_secure}'
+        );
+    EXCEPTION
+        WHEN OTHERS THEN
+            RAISE NOTICE 'Table/view registration skipped: %', SQLERRM;
+    END;
+
+    BEGIN
+        PERFORM alloydb_ai_nl.g_manage_configuration(
+            'add_general_context',
+            'telova_nl',
+            general_context_in => $json${
+              "Telova is a multi-agent productivity assistant. Goals contain tasks and calendar blocks. A task is overdue when it is not done and the scheduled end time is in the past. A goal is at risk when deviation is high or when it has blocked or overdue tasks. Questions about today's work usually refer to scheduled tasks or calendar blocks for the current day."
+            }$json$
+        );
+    EXCEPTION
+        WHEN OTHERS THEN
+            RAISE NOTICE 'General context skipped: %', SQLERRM;
+    END;
+
+    BEGIN
+        PERFORM alloydb_ai_nl.add_template(
+            nl_config_id => 'telova_nl',
+            intent => 'Which active goals have overdue tasks?',
+            sql => $sql$SELECT goal_title, overdue_tasks, blocked_tasks, deviation, deadline
+                         FROM public.telova_goal_execution_secure
+                         WHERE goal_status = 'active' AND overdue_tasks > 0
+                         ORDER BY overdue_tasks DESC, deadline ASC$sql$
+        );
+    EXCEPTION
+        WHEN OTHERS THEN
+            RAISE NOTICE 'Template "Which active goals have overdue tasks?" skipped: %', SQLERRM;
+    END;
+
+    BEGIN
+        PERFORM alloydb_ai_nl.add_template(
+            nl_config_id => 'telova_nl',
+            intent => 'What is due today?',
+            sql => $sql$SELECT goal_title, task_title, phase, task_status, scheduled_start, scheduled_end
+                         FROM public.telova_schedule_pressure_secure
+                         WHERE scheduled_start >= date_trunc('day', NOW())
+                           AND scheduled_start < date_trunc('day', NOW()) + interval '1 day'
+                         ORDER BY scheduled_start ASC$sql$
+        );
+    EXCEPTION
+        WHEN OTHERS THEN
+            RAISE NOTICE 'Template "What is due today?" skipped: %', SQLERRM;
+    END;
+
+    BEGIN
+        PERFORM alloydb_ai_nl.add_template(
+            nl_config_id => 'telova_nl',
+            intent => 'Which tasks are blocked?',
+            sql => $sql$SELECT goal_title, task_title, phase, task_status, scheduled_end
+                         FROM public.telova_schedule_pressure_secure
+                         WHERE is_blocked = TRUE
+                         ORDER BY scheduled_end ASC NULLS LAST$sql$
+        );
+    EXCEPTION
+        WHEN OTHERS THEN
+            RAISE NOTICE 'Template "Which tasks are blocked?" skipped: %', SQLERRM;
+    END;
+
+    BEGIN
+        PERFORM alloydb_ai_nl.add_template(
+            nl_config_id => 'telova_nl',
+            intent => 'Which goal has the highest deviation from plan?',
+            sql => $sql$SELECT goal_title, domain, deviation, deadline, overdue_tasks, blocked_tasks
+                         FROM public.telova_goal_execution_secure
+                         ORDER BY deviation DESC, overdue_tasks DESC
+                         LIMIT 5$sql$
+        );
+    EXCEPTION
+        WHEN OTHERS THEN
+            RAISE NOTICE 'Template "Which goal has the highest deviation from plan?" skipped: %', SQLERRM;
+    END;
+
+    BEGIN
+        PERFORM alloydb_ai_nl.add_template(
+            nl_config_id => 'telova_nl',
+            intent => 'What did the agents do recently?',
+            sql => $sql$SELECT agent_name, operation, status, runtime, started_at, sync_operation, sync_status
+                         FROM public.telova_agent_activity_secure
+                         ORDER BY started_at DESC
+                         LIMIT 10$sql$
+        );
+    EXCEPTION
+        WHEN OTHERS THEN
+            RAISE NOTICE 'Template "What did the agents do recently?" skipped: %', SQLERRM;
+    END;
+
+    BEGIN
+        PERFORM alloydb_ai_nl.add_fragment(
+            nl_config_id => 'telova_nl',
+            table_aliases => ARRAY['public.telova_schedule_pressure_secure AS T'],
+            intent => 'tasks due tomorrow',
+            fragment => $sql$T.scheduled_start >= date_trunc('day', NOW()) + interval '1 day'
+                            AND T.scheduled_start < date_trunc('day', NOW()) + interval '2 day'$sql$,
+            check_intent => TRUE
+        );
+    EXCEPTION
+        WHEN OTHERS THEN
+            RAISE NOTICE 'Fragment "tasks due tomorrow" skipped: %', SQLERRM;
+    END;
+
+    BEGIN
+        PERFORM alloydb_ai_nl.add_fragment(
+            nl_config_id => 'telova_nl',
+            table_aliases => ARRAY['public.telova_goal_execution_secure AS T'],
+            intent => 'goals at risk',
+            fragment => $sql$T.deviation >= 0.20 OR T.overdue_tasks > 0 OR T.blocked_tasks > 0$sql$,
+            check_intent => TRUE
+        );
+    EXCEPTION
+        WHEN OTHERS THEN
+            RAISE NOTICE 'Fragment "goals at risk" skipped: %', SQLERRM;
+    END;
+
+    BEGIN
+        PERFORM alloydb_ai_nl.add_fragment(
+            nl_config_id => 'telova_nl',
+            table_aliases => ARRAY['public.telova_schedule_pressure_secure AS T'],
+            intent => 'completed tasks',
+            fragment => $sql$T.task_status = 'done'$sql$,
+            check_intent => TRUE
+        );
+    EXCEPTION
+        WHEN OTHERS THEN
+            RAISE NOTICE 'Fragment "completed tasks" skipped: %', SQLERRM;
+    END;
 END $$;
-
-SELECT alloydb_ai_nl.g_manage_configuration(
-    operation => 'register_table_view',
-    configuration_id_in => 'telova_nl',
-    table_views_in => '{public.telova_goal_execution_secure,public.telova_schedule_pressure_secure,public.telova_agent_activity_secure}'
-);
-
-SELECT alloydb_ai_nl.g_manage_configuration(
-    'add_general_context',
-    'telova_nl',
-    general_context_in => $${
-      "Telova is a multi-agent productivity assistant. Goals contain tasks and calendar blocks. A task is overdue when it is not done and the scheduled end time is in the past. A goal is at risk when deviation is high or when it has blocked or overdue tasks. Questions about today's work usually refer to scheduled tasks or calendar blocks for the current day."
-    }$$
-);
-
-SELECT alloydb_ai_nl.add_template(
-    nl_config_id => 'telova_nl',
-    intent => 'Which active goals have overdue tasks?',
-    sql => $$SELECT goal_title, overdue_tasks, blocked_tasks, deviation, deadline
-             FROM public.telova_goal_execution_secure
-             WHERE goal_status = 'active' AND overdue_tasks > 0
-             ORDER BY overdue_tasks DESC, deadline ASC$$
-);
-
-SELECT alloydb_ai_nl.add_template(
-    nl_config_id => 'telova_nl',
-    intent => 'What is due today?',
-    sql => $$SELECT goal_title, task_title, phase, task_status, scheduled_start, scheduled_end
-             FROM public.telova_schedule_pressure_secure
-             WHERE scheduled_start >= date_trunc('day', NOW())
-               AND scheduled_start < date_trunc('day', NOW()) + interval '1 day'
-             ORDER BY scheduled_start ASC$$
-);
-
-SELECT alloydb_ai_nl.add_template(
-    nl_config_id => 'telova_nl',
-    intent => 'Which tasks are blocked?',
-    sql => $$SELECT goal_title, task_title, phase, task_status, scheduled_end
-             FROM public.telova_schedule_pressure_secure
-             WHERE is_blocked = TRUE
-             ORDER BY scheduled_end ASC NULLS LAST$$
-);
-
-SELECT alloydb_ai_nl.add_template(
-    nl_config_id => 'telova_nl',
-    intent => 'Which goal has the highest deviation from plan?',
-    sql => $$SELECT goal_title, domain, deviation, deadline, overdue_tasks, blocked_tasks
-             FROM public.telova_goal_execution_secure
-             ORDER BY deviation DESC, overdue_tasks DESC
-             LIMIT 5$$
-);
-
-SELECT alloydb_ai_nl.add_template(
-    nl_config_id => 'telova_nl',
-    intent => 'What did the agents do recently?',
-    sql => $$SELECT agent_name, operation, status, runtime, started_at, sync_operation, sync_status
-             FROM public.telova_agent_activity_secure
-             ORDER BY started_at DESC
-             LIMIT 10$$
-);
-
-SELECT alloydb_ai_nl.add_fragment(
-    nl_config_id => 'telova_nl',
-    table_aliases => ARRAY['public.telova_schedule_pressure_secure AS T'],
-    intent => 'tasks due tomorrow',
-    fragment => $$T.scheduled_start >= date_trunc('day', NOW()) + interval '1 day'
-                AND T.scheduled_start < date_trunc('day', NOW()) + interval '2 day'$$,
-    check_intent => TRUE
-);
-
-SELECT alloydb_ai_nl.add_fragment(
-    nl_config_id => 'telova_nl',
-    table_aliases => ARRAY['public.telova_goal_execution_secure AS T'],
-    intent => 'goals at risk',
-    fragment => $$T.deviation >= 0.20 OR T.overdue_tasks > 0 OR T.blocked_tasks > 0$$,
-    check_intent => TRUE
-);
-
-SELECT alloydb_ai_nl.add_fragment(
-    nl_config_id => 'telova_nl',
-    table_aliases => ARRAY['public.telova_schedule_pressure_secure AS T'],
-    intent => 'completed tasks',
-    fragment => $$T.task_status = 'done'$$,
-    check_intent => TRUE
-);
