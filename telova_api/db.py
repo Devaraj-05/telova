@@ -12,6 +12,7 @@ from sqlalchemy.ext.asyncio import (
 from sqlalchemy.orm import DeclarativeBase
 
 from telova_api.config import get_settings
+from telova_api.secrets import SecretResolver
 
 
 class Base(DeclarativeBase):
@@ -19,17 +20,24 @@ class Base(DeclarativeBase):
 
 
 settings = get_settings()
+secret_resolver = SecretResolver(settings)
 _alloydb_connector = None
 
 
 def _build_engine() -> AsyncEngine:
     global _alloydb_connector
 
+    alloydb_password = secret_resolver.resolve_text(
+        inline_value=settings.alloydb_password,
+        secret_name=settings.alloydb_password_secret,
+        label="AlloyDB password",
+    )
+
     if (
         settings.alloydb_instance_name
         and settings.alloydb_database
         and settings.alloydb_user
-        and settings.alloydb_password
+        and (alloydb_password or settings.alloydb_enable_iam_auth)
     ):
         try:
             from google.cloud.alloydbconnector import AsyncConnector, IPTypes
@@ -52,11 +60,13 @@ def _build_engine() -> AsyncEngine:
                     IPTypes,
                     settings.alloydb_ip_type.upper(),
                 )
+            if settings.alloydb_enable_iam_auth:
+                connector_kwargs["enable_iam_auth"] = True
             return await _alloydb_connector.connect(
                 settings.alloydb_instance_name,
                 "asyncpg",
                 user=settings.alloydb_user,
-                password=settings.alloydb_password,
+                password=alloydb_password or "",
                 db=settings.alloydb_database,
                 **connector_kwargs,
             )

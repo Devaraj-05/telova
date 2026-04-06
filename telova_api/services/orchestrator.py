@@ -2,10 +2,11 @@
 
 from dataclasses import dataclass
 from datetime import datetime
+import asyncio
+import inspect
 
 from telova_api.agents.conflict_sentinel import ConflictAlert, ConflictSentinelAgent
 from telova_api.agents.context_bridge import ContextBridgeAgent
-from telova_api.agents.goal_decomposer import GoalDecomposerAgent
 from telova_api.agents.progress_adaptor import ProgressAdaptorAgent
 from telova_api.integrations.calendar import DatabaseCalendarGateway
 from telova_api.integrations.notes import DatabaseNotesGateway
@@ -16,6 +17,10 @@ from telova_api.repositories.goals import GoalRepository
 from telova_api.repositories.notes import NoteRepository
 from telova_api.repositories.tasks import TaskRepository
 from telova_api.schemas import GoalCreateRequest
+from telova_api.services.planning_runtime import (
+    DeterministicPlanningRuntime,
+    GoogleAdkPlanningRuntime,
+)
 from telova_api.services.scheduling import BusyWindow
 from telova_api.vectorizer import embed_text
 
@@ -36,7 +41,7 @@ class TelovaOrchestratorService:
         task_gateway: DatabaseTaskGateway,
         calendar_gateway: DatabaseCalendarGateway,
         notes_gateway: DatabaseNotesGateway,
-        goal_decomposer: GoalDecomposerAgent,
+        planning_runtime: DeterministicPlanningRuntime | GoogleAdkPlanningRuntime,
         conflict_sentinel: ConflictSentinelAgent,
         context_bridge: ContextBridgeAgent,
         progress_adaptor: ProgressAdaptorAgent,
@@ -49,7 +54,7 @@ class TelovaOrchestratorService:
         self.task_gateway = task_gateway
         self.calendar_gateway = calendar_gateway
         self.notes_gateway = notes_gateway
-        self.goal_decomposer = goal_decomposer
+        self.planning_runtime = planning_runtime
         self.conflict_sentinel = conflict_sentinel
         self.context_bridge = context_bridge
         self.progress_adaptor = progress_adaptor
@@ -57,7 +62,7 @@ class TelovaOrchestratorService:
 
     async def create_goal_plan(self, request: GoalCreateRequest) -> tuple[Goal, dict, list[Task], list]:
         existing_events = await self.calendar_gateway.list_all(user_id=request.user_id)
-        plan = self.goal_decomposer.build_plan(
+        plan_result = self.planning_runtime.build_plan(
             goal_text=request.goal,
             description=request.description,
             deadline=request.deadline,
@@ -66,6 +71,7 @@ class TelovaOrchestratorService:
                 for event in existing_events
             ],
         )
+        plan = await plan_result if inspect.isawaitable(plan_result) else plan_result
 
         goal = await self.goal_repo.create(
             Goal(
@@ -119,6 +125,7 @@ class TelovaOrchestratorService:
             await self.task_repo.save(task)
             events.append(event)
 
+        await self.task_gateway.sync_generated_tasks(goal, tasks)
         goal.dag_json = self._hydrate_dag(plan.dag, tasks)
         await self.goal_repo.save(goal)
         return goal, goal.dag_json, tasks, events
@@ -170,16 +177,60 @@ class TelovaOrchestratorService:
         return await self.task_repo.search(user_id=user_id, query=query, limit=limit)
 
     async def list_tasks(self, user_id: str) -> list[Task]:
-        return await self.task_repo.list_by_user(user_id)
+        return await self.task_gateway.list_user_tasks(user_id)
 
     async def list_notes(self, user_id: str, limit: int = 50) -> list:
-        return await self.note_repo.list_by_user(user_id, limit=limit)
+        return await self.notes_gateway.list_user_notes(user_id, limit=limit)
+
+    async def create_note(
+        self,
+        *,
+        user_id: str,
+        title: str,
+        content: str,
+        goal_id: str | None = None,
+        note_type: str = "manual",
+    ):
+        return await self.notes_gateway.create_manual_note(
+            user_id=user_id,
+            title=title,
+            content=content,
+            goal_id=goal_id,
+            note_type=note_type,
+        )
+
+    async def update_note(
+        self,
+        note_id: str,
+        *,
+        title: str | None = None,
+        content: str | None = None,
+    ):
+        note = await self.note_repo.get(note_id)
+        if note is None:
+            return None
+        return await self.notes_gateway.update_note(
+            note,
+            title=title,
+            content=content,
+        )
+
+    async def describe_integrations(self, user_id: str) -> list[dict]:
+        statuses = await asyncio.gather(
+            self.calendar_gateway.describe_status(user_id),
+            self.task_gateway.describe_status(user_id),
+            self.notes_gateway.describe_status(user_id),
+        )
+        return [status.__dict__ for status in statuses]
+
+    def describe_planning_runtime(self) -> dict:
+        return self.planning_runtime.describe_status().__dict__
 
     async def get_dashboard(self, user_id: str) -> dict:
         goals = await self.goal_repo.list_by_user(user_id)
-        tasks = await self.task_repo.list_by_user(user_id)
+        tasks = await self.task_gateway.list_user_tasks(user_id)
         events = await self.calendar_gateway.list_upcoming(user_id=user_id, hours_ahead=168)
-        notes = await self.note_repo.list_by_user(user_id, limit=10)
+        notes = await self.notes_gateway.list_user_notes(user_id, limit=10)
         return {
             "goals": goals,
             "recent_tasks": tasks[:12],

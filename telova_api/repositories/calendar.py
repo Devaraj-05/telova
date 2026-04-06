@@ -21,6 +21,19 @@ class CalendarEventRepository:
     async def get(self, event_id: str) -> CalendarEvent | None:
         return await self.session.get(CalendarEvent, event_id)
 
+    async def get_by_external_event_id(
+        self,
+        user_id: str,
+        external_event_id: str,
+    ) -> CalendarEvent | None:
+        result = await self.session.execute(
+            select(CalendarEvent).where(
+                CalendarEvent.user_id == user_id,
+                CalendarEvent.external_event_id == external_event_id,
+            )
+        )
+        return result.scalars().first()
+
     async def list_for_user(
         self,
         user_id: str,

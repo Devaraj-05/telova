@@ -10,8 +10,29 @@ class NoteRepository:
     def __init__(self, session: AsyncSession) -> None:
         self.session = session
 
+    async def get(self, note_id: str) -> Note | None:
+        return await self.session.get(Note, note_id)
+
+    async def get_by_external_note_id(
+        self,
+        user_id: str,
+        external_note_id: str,
+    ) -> Note | None:
+        result = await self.session.execute(
+            select(Note).where(
+                Note.user_id == user_id,
+                Note.external_note_id == external_note_id,
+            )
+        )
+        return result.scalars().first()
+
     async def create_note(self, note: Note) -> Note:
         self.session.add(note)
+        await self.session.flush()
+        await self.session.refresh(note)
+        return note
+
+    async def save(self, note: Note) -> Note:
         await self.session.flush()
         await self.session.refresh(note)
         return note

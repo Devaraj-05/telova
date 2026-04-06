@@ -287,6 +287,25 @@ class GoalDecomposerAgent:
     ) -> GoalDecompositionResult:
         domain = self.classify_goal(goal_text)
         blueprint = BLUEPRINTS[domain]
+        return self.render_plan_from_blueprint(
+            domain=domain,
+            goal_text=goal_text,
+            description=description,
+            deadline=deadline,
+            busy_windows=busy_windows,
+            blueprint=blueprint,
+        )
+
+    def render_plan_from_blueprint(
+        self,
+        *,
+        domain: str,
+        goal_text: str,
+        description: str | None,
+        deadline: datetime | None,
+        busy_windows: list[BusyWindow],
+        blueprint: list[BlueprintTask],
+    ) -> GoalDecompositionResult:
         resolved_deadline = self.scheduler.ensure_utc(
             deadline or self.infer_deadline(goal_text)
         )

@@ -22,6 +22,19 @@ class TaskUpdateRequest(BaseModel):
     status: str
 
 
+class NoteCreateRequest(BaseModel):
+    user_id: str
+    title: str
+    content: str
+    goal_id: str | None = None
+    note_type: str = "manual"
+
+
+class NoteUpdateRequest(BaseModel):
+    title: str | None = None
+    content: str | None = None
+
+
 class CalendarEventCreateRequest(BaseModel):
     user_id: str
     title: str
@@ -213,14 +226,25 @@ class WorkflowLogRead(BaseModel):
     timestamp: datetime | None = None
 
 
+class ReadinessCheckRead(BaseModel):
+    name: str
+    status: str
+    detail: str
+
+
 class SystemStatusRead(BaseModel):
     app: str
     environment: str
     database: str
     runtime_mode: str
+    orchestration_runtime: str
+    integration_backend: str
+    auth_mode: str
+    rate_limit: str
     status: str
     last_updated: datetime
     metrics: list[SystemMetricRead]
     agents: list[AgentHealthRead]
     connections: list[ToolConnectionRead]
     workflows: list[WorkflowLogRead]
+    readiness: list[ReadinessCheckRead]

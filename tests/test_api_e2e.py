@@ -1,0 +1,121 @@
+from __future__ import annotations
+
+from fastapi import FastAPI
+from fastapi.testclient import TestClient
+import pytest
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
+
+from telova_api.main import app
+from telova_api.security import ApiAuthMiddleware
+import telova_api.db as db_module
+
+
+@pytest.fixture
+def client(tmp_path):
+    test_db_path = tmp_path / "telova-test.db"
+    test_engine = create_async_engine(
+        f"sqlite+aiosqlite:///{test_db_path.as_posix()}",
+        future=True,
+        echo=False,
+    )
+    test_session = async_sessionmaker(
+        bind=test_engine,
+        expire_on_commit=False,
+        class_=AsyncSession,
+    )
+
+    original_engine = db_module.engine
+    original_session_local = db_module.SessionLocal
+    db_module.engine = test_engine
+    db_module.SessionLocal = test_session
+
+    with TestClient(app) as test_client:
+        yield test_client
+
+    db_module.engine = original_engine
+    db_module.SessionLocal = original_session_local
+
+
+def test_goal_plan_conflict_scan_flow(client: TestClient):
+    plan_response = client.post(
+        "/api/v1/goals",
+        json={
+            "user_id": "demo-user",
+            "goal": "Launch an MVP in 4 weeks",
+            "description": "Need a demo-ready build with validation.",
+        },
+    )
+    assert plan_response.status_code == 200
+    plan = plan_response.json()
+    assert plan["tasks"]
+
+    first_task = plan["tasks"][0]
+    event_response = client.post(
+        "/api/v1/calendar/events",
+        json={
+            "user_id": "demo-user",
+            "title": "Customer review",
+            "description": "Intentional overlap for conflict testing.",
+            "start_at": first_task["scheduled_start"],
+            "end_at": first_task["scheduled_end"],
+            "goal_id": plan["goal"]["id"],
+            "task_id": first_task["id"],
+        },
+    )
+    assert event_response.status_code == 200
+
+    conflict_response = client.post(
+        "/api/v1/webhooks/cron/conflict-check",
+        json={"user_id": "demo-user", "auto_resolve": False},
+    )
+    assert conflict_response.status_code == 200
+    alerts = conflict_response.json()
+    assert alerts
+    assert alerts[0]["task_id"] == first_task["id"]
+
+
+def test_notes_create_and_update_flow(client: TestClient):
+    note_response = client.post(
+        "/api/v1/notes",
+        json={
+            "user_id": "demo-user",
+            "title": "Daily brief",
+            "content": "Capture blockers and next actions.",
+            "note_type": "manual",
+        },
+    )
+    assert note_response.status_code == 200
+    note = note_response.json()
+    assert note["title"] == "Daily brief"
+
+    patch_response = client.patch(
+        f"/api/v1/notes/{note['id']}",
+        json={"content": "Updated execution notes."},
+    )
+    assert patch_response.status_code == 200
+    assert patch_response.json()["content"] == "Updated execution notes."
+
+    list_response = client.get("/api/v1/notes", params={"user_id": "demo-user"})
+    assert list_response.status_code == 200
+    assert any(item["id"] == note["id"] for item in list_response.json())
+
+
+def test_api_auth_middleware_enforces_api_key():
+    secured = FastAPI()
+    secured.add_middleware(
+        ApiAuthMiddleware,
+        auth_mode="api_key",
+        api_key="secret-key",
+        cron_token="cron-key",
+    )
+
+    @secured.get("/api/ping")
+    async def ping():
+        return {"ok": True}
+
+    client = TestClient(secured)
+    assert client.get("/api/ping").status_code == 401
+    assert (
+        client.get("/api/ping", headers={"X-Telova-API-Key": "secret-key"}).status_code
+        == 200
+    )

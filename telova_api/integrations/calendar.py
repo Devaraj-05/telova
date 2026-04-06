@@ -1,9 +1,18 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
-from datetime import datetime
+from datetime import UTC, date, datetime, timedelta
+import logging
 
+from telova_api.config import Settings
+from telova_api.integrations.contracts import IntegrationStatus
+from telova_api.integrations.google_workspace import GoogleWorkspaceClientFactory
 from telova_api.models import CalendarEvent, EventSource, Goal, Task
 from telova_api.repositories.calendar import CalendarEventRepository
+
+
+logger = logging.getLogger(__name__)
+
+CALENDAR_SCOPES = ["https://www.googleapis.com/auth/calendar"]
 
 
 class DatabaseCalendarGateway:
@@ -92,4 +101,330 @@ class DatabaseCalendarGateway:
         event.metadata_json = metadata
         return await self.calendar_repo.save(event)
 
+    async def describe_status(self, user_id: str) -> IntegrationStatus:
+        del user_id
+        return IntegrationStatus(
+            name="Calendar",
+            kind="MCP tool",
+            status="connected",
+            detail="Using the local database-backed calendar adapter.",
+            backend="database",
+        )
 
+
+class GoogleCalendarGateway(DatabaseCalendarGateway):
+    def __init__(
+        self,
+        calendar_repo: CalendarEventRepository,
+        *,
+        workspace_factory: GoogleWorkspaceClientFactory,
+        settings: Settings,
+    ) -> None:
+        super().__init__(calendar_repo)
+        self.workspace_factory = workspace_factory
+        self.settings = settings
+
+    async def materialize_task_block(self, goal: Goal, task: Task) -> CalendarEvent:
+        event = await super().materialize_task_block(goal, task)
+        if not self.workspace_factory.is_configured():
+            return event
+
+        try:
+            remote_id = await self.workspace_factory.execute(
+                user_id=goal.user_id,
+                service_name="calendar",
+                version="v3",
+                scopes=CALENDAR_SCOPES,
+                operation=lambda service: service.events()
+                .insert(
+                    calendarId=self.settings.google_calendar_id,
+                    body=self._build_remote_event_body(
+                        title=task.title,
+                        description=task.description,
+                        start_at=task.scheduled_start,
+                        end_at=task.scheduled_end,
+                        telova_managed=True,
+                        metadata={
+                            "goal_id": goal.id,
+                            "task_id": task.id,
+                            "phase": task.phase,
+                        },
+                    ),
+                )
+                .execute()
+                .get("id"),
+            )
+            if remote_id:
+                event.external_event_id = remote_id
+                await self.calendar_repo.save(event)
+        except Exception:
+            logger.exception("Failed to sync Telova task block to Google Calendar.")
+        return event
+
+    async def create_external_event(
+        self,
+        *,
+        user_id: str,
+        title: str,
+        description: str,
+        start_at: datetime,
+        end_at: datetime,
+        goal_id: str | None = None,
+        task_id: str | None = None,
+    ) -> CalendarEvent:
+        event = await super().create_external_event(
+            user_id=user_id,
+            title=title,
+            description=description,
+            start_at=start_at,
+            end_at=end_at,
+            goal_id=goal_id,
+            task_id=task_id,
+        )
+        if not self.workspace_factory.is_configured():
+            return event
+
+        try:
+            remote_id = await self.workspace_factory.execute(
+                user_id=user_id,
+                service_name="calendar",
+                version="v3",
+                scopes=CALENDAR_SCOPES,
+                operation=lambda service: service.events()
+                .insert(
+                    calendarId=self.settings.google_calendar_id,
+                    body=self._build_remote_event_body(
+                        title=title,
+                        description=description,
+                        start_at=start_at,
+                        end_at=end_at,
+                        telova_managed=False,
+                        metadata={"goal_id": goal_id, "task_id": task_id},
+                    ),
+                )
+                .execute()
+                .get("id"),
+            )
+            if remote_id:
+                event.external_event_id = remote_id
+                await self.calendar_repo.save(event)
+        except Exception:
+            logger.exception("Failed to create external event in Google Calendar.")
+        return event
+
+    async def list_upcoming(
+        self,
+        user_id: str,
+        hours_ahead: int = 72,
+        source: str | None = None,
+        goal_id: str | None = None,
+    ) -> list[CalendarEvent]:
+        if source in {None, EventSource.EXTERNAL.value}:
+            await self._sync_external_events(user_id, hours_ahead=hours_ahead)
+        return await super().list_upcoming(
+            user_id=user_id,
+            hours_ahead=hours_ahead,
+            source=source,
+            goal_id=goal_id,
+        )
+
+    async def list_all(
+        self,
+        user_id: str,
+        source: str | None = None,
+        limit: int = 100,
+    ) -> list[CalendarEvent]:
+        if source in {None, EventSource.EXTERNAL.value}:
+            await self._sync_external_events(user_id, hours_ahead=24 * 30)
+        return await super().list_all(user_id=user_id, source=source, limit=limit)
+
+    async def reschedule_task_block(
+        self,
+        event: CalendarEvent,
+        *,
+        start_at: datetime,
+        end_at: datetime,
+        reason: str,
+    ) -> CalendarEvent:
+        updated = await super().reschedule_task_block(
+            event,
+            start_at=start_at,
+            end_at=end_at,
+            reason=reason,
+        )
+        if not (
+            self.workspace_factory.is_configured() and updated.external_event_id
+        ):
+            return updated
+
+        try:
+            await self.workspace_factory.execute(
+                user_id=updated.user_id,
+                service_name="calendar",
+                version="v3",
+                scopes=CALENDAR_SCOPES,
+                operation=lambda service: service.events()
+                .patch(
+                    calendarId=self.settings.google_calendar_id,
+                    eventId=updated.external_event_id,
+                    body=self._build_remote_event_body(
+                        title=updated.title,
+                        description=updated.description,
+                        start_at=updated.start_at,
+                        end_at=updated.end_at,
+                        telova_managed=updated.source == EventSource.SYSTEM.value,
+                        metadata=dict(updated.metadata_json or {}),
+                    ),
+                )
+                .execute(),
+            )
+        except Exception:
+            logger.exception("Failed to reschedule Google Calendar event %s.", event.id)
+        return updated
+
+    async def describe_status(self, user_id: str) -> IntegrationStatus:
+        if not self.workspace_factory.is_configured():
+            return IntegrationStatus(
+                name="Calendar",
+                kind="Google Calendar",
+                status="warning",
+                detail=(
+                    "Google backend is enabled, but Calendar credentials are not "
+                    "ready. Falling back to local calendar storage."
+                ),
+                backend="google",
+            )
+
+        return IntegrationStatus(
+            name="Calendar",
+            kind="Google Calendar",
+            status="connected",
+            detail=(
+                "Syncing live external calendar commitments and pushing "
+                f"Telova task blocks to calendar {self.settings.google_calendar_id}."
+            ),
+            backend="google",
+        )
+
+    async def _sync_external_events(self, user_id: str, *, hours_ahead: int) -> None:
+        if not self.workspace_factory.is_configured():
+            return
+
+        now = datetime.now(UTC)
+        time_min = (now - timedelta(hours=6)).isoformat()
+        time_max = (now + timedelta(hours=max(hours_ahead, 24))).isoformat()
+
+        try:
+            remote_items = await self.workspace_factory.execute(
+                user_id=user_id,
+                service_name="calendar",
+                version="v3",
+                scopes=CALENDAR_SCOPES,
+                operation=lambda service: service.events()
+                .list(
+                    calendarId=self.settings.google_calendar_id,
+                    timeMin=time_min,
+                    timeMax=time_max,
+                    singleEvents=True,
+                    orderBy="startTime",
+                    maxResults=250,
+                )
+                .execute()
+                .get("items", []),
+            )
+        except Exception:
+            logger.exception("Failed to sync Google Calendar events for %s.", user_id)
+            return
+
+        for item in remote_items:
+            if item.get("status") == "cancelled":
+                continue
+            remote_id = item.get("id")
+            if not remote_id:
+                continue
+
+            private_props = (
+                item.get("extendedProperties", {}).get("private", {}) or {}
+            )
+            telova_managed = private_props.get("telovaManaged") == "true"
+            existing = await self.calendar_repo.get_by_external_event_id(
+                user_id=user_id,
+                external_event_id=remote_id,
+            )
+
+            if telova_managed:
+                if existing and existing.source == EventSource.SYSTEM.value:
+                    existing.start_at = self._parse_google_datetime(item["start"])
+                    existing.end_at = self._parse_google_datetime(item["end"])
+                    existing.metadata_json = {
+                        **dict(existing.metadata_json or {}),
+                        "html_link": item.get("htmlLink"),
+                    }
+                    await self.calendar_repo.save(existing)
+                continue
+
+            start_at = self._parse_google_datetime(item["start"])
+            end_at = self._parse_google_datetime(item["end"])
+            metadata = {
+                "origin": "google-calendar",
+                "html_link": item.get("htmlLink"),
+                "etag": item.get("etag"),
+            }
+
+            if existing is None:
+                await self.calendar_repo.create(
+                    CalendarEvent(
+                        user_id=user_id,
+                        goal_id=None,
+                        task_id=None,
+                        title=item.get("summary") or "Untitled event",
+                        description=item.get("description") or "",
+                        source=EventSource.EXTERNAL.value,
+                        start_at=start_at,
+                        end_at=end_at,
+                        external_event_id=remote_id,
+                        metadata_json=metadata,
+                    )
+                )
+                continue
+
+            existing.title = item.get("summary") or existing.title
+            existing.description = item.get("description") or ""
+            existing.start_at = start_at
+            existing.end_at = end_at
+            existing.source = EventSource.EXTERNAL.value
+            existing.metadata_json = metadata
+            await self.calendar_repo.save(existing)
+
+    def _build_remote_event_body(
+        self,
+        *,
+        title: str,
+        description: str,
+        start_at: datetime,
+        end_at: datetime,
+        telova_managed: bool,
+        metadata: dict,
+    ) -> dict:
+        private_metadata = {
+            "telovaManaged": "true" if telova_managed else "false",
+        }
+        for key, value in metadata.items():
+            if value is not None:
+                private_metadata[f"telova_{key}"] = str(value)
+
+        return {
+            "summary": title,
+            "description": description,
+            "start": {"dateTime": start_at.astimezone(UTC).isoformat()},
+            "end": {"dateTime": end_at.astimezone(UTC).isoformat()},
+            "extendedProperties": {"private": private_metadata},
+        }
+
+    def _parse_google_datetime(self, payload: dict) -> datetime:
+        if "dateTime" in payload:
+            return datetime.fromisoformat(
+                payload["dateTime"].replace("Z", "+00:00")
+            ).astimezone(UTC)
+        all_day = date.fromisoformat(payload["date"])
+        return datetime.combine(all_day, datetime.min.time(), tzinfo=UTC)

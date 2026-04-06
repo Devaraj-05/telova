@@ -11,4 +11,5 @@ __pycache__/
 dist/
 build/
 *.egg-info/
-
+cloudrun.env.yaml
+infra/gcp/cloudrun.env.yaml

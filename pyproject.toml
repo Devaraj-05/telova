@@ -26,6 +26,17 @@ dev = [
 gcp = [
   "google-cloud-alloydb-connector[asyncpg]",
   "asyncpg",
+  "google-api-python-client",
+  "google-auth-httplib2",
+  "google-auth-oauthlib",
+  "google-cloud-secret-manager",
+]
+adk = [
+  "google-adk",
+]
+prod = [
+  "alembic",
+  "sentry-sdk",
 ]
 
 [tool.setuptools.packages.find]

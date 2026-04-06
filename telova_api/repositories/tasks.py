@@ -23,6 +23,19 @@ class TaskRepository:
     async def get(self, task_id: str) -> Task | None:
         return await self.session.get(Task, task_id)
 
+    async def get_by_external_task_id(
+        self,
+        user_id: str,
+        external_task_id: str,
+    ) -> Task | None:
+        result = await self.session.execute(
+            select(Task).where(
+                Task.user_id == user_id,
+                Task.external_task_id == external_task_id,
+            )
+        )
+        return result.scalars().first()
+
     async def list_by_goal(self, goal_id: str) -> list[Task]:
         result = await self.session.execute(
             select(Task)
@@ -35,6 +48,17 @@ class TaskRepository:
         result = await self.session.execute(
             select(Task)
             .where(Task.user_id == user_id)
+            .order_by(Task.updated_at.desc(), Task.created_at.desc())
+        )
+        return list(result.scalars())
+
+    async def list_synced_by_user(self, user_id: str) -> list[Task]:
+        result = await self.session.execute(
+            select(Task)
+            .where(
+                Task.user_id == user_id,
+                Task.external_task_id.is_not(None),
+            )
             .order_by(Task.updated_at.desc(), Task.created_at.desc())
         )
         return list(result.scalars())

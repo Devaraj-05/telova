@@ -1,6 +1,12 @@
+# Base runtime and local test dependencies.
+# For Cloud Run, AlloyDB, Secret Manager, Google Workspace, ADK, and Alembic:
+#   pip install ".[gcp,adk,prod]"
 fastapi>=0.135,<0.136
 uvicorn[standard]
 sqlalchemy
 aiosqlite
 pydantic
 mcp
+httpx
+pytest
+pytest-asyncio

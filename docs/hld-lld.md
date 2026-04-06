@@ -1,90 +1,137 @@
-﻿# Telova HLD + LLD
+# Telova HLD + LLD
 
-## 1. Product Intent
+## 1. Product intent
 
-Telova converts a high-level goal into an execution system. Instead of asking the user to maintain a to-do list manually, the system plans the work, schedules it against time, detects conflicts ahead of time, and adapts the plan when execution drifts.
+Telova is a command-center style orchestration system for personal execution. A user gives the product a high-level goal, and Telova turns it into a dependency-aware plan, schedules the work, watches for conflict, stores working memory, and re-plans when execution slips.
 
-## 2. Functional Requirements
+## 2. Functional requirements
 
 1. Accept a natural-language goal and optional deadline.
-2. Build a dependency-aware task graph.
-3. Persist goals, tasks, schedules, notes, and re-plan history.
-4. Expose an API-first workflow.
-5. Provide calendar, task, and notes tool surfaces through MCP-compatible entry points.
-6. Detect near-term schedule conflicts.
-7. Generate context packages when switching goals.
-8. Re-plan goals when progress deviation crosses a threshold.
-9. Support local development now and GCP deployment later.
+2. Generate a task DAG with milestones, sequencing, and suggested schedule windows.
+3. Persist goals, tasks, calendar blocks, notes, context packages, and re-plan history.
+4. Expose an API-first workflow plus a demo-ready command-center UI.
+5. Support calendar, tasks, and notes tool surfaces through MCP-compatible entry points.
+6. Detect near-term schedule conflicts and generate adaptation recommendations.
+7. Sync generated artifacts to Google Calendar, Google Tasks, and optional Keep integrations.
+8. Support deterministic local planning and optional Google ADK / Gemini orchestration.
+9. Run securely in production with auth, rate limiting, structured logs, secret resolution, and migrations.
+10. Deploy to Cloud Run with AlloyDB, Secret Manager, and Cloud Scheduler.
 
-## 3. High-Level Architecture
+## 3. High-level architecture
 
 ```mermaid
 flowchart LR
-    UI[Dashboard / API Client] --> API[FastAPI Application]
-    API --> ORCH[Telova Orchestrator]
-    ORCH --> GD[Goal Decomposer Agent]
-    ORCH --> CS[Conflict Sentinel Agent]
-    ORCH --> CB[Context Bridge Agent]
-    ORCH --> PA[Progress Adaptor Agent]
-    GD --> CAL[Calendar Gateway]
-    GD --> TSK[Task Gateway]
-    CB --> NTS[Notes Gateway]
-    CS --> CAL
-    PA --> CAL
-    API --> DB[(SQLite local / AlloyDB prod)]
-    CAL --> DB
-    TSK --> DB
-    NTS --> DB
+    UI[Command Center UI / API Client] --> API[FastAPI Application]
+    API --> SEC[Security Middleware]
+    SEC --> ORCH[Telova Orchestrator]
+    ORCH --> PLAN[Planning Runtime]
+    PLAN --> DET[Deterministic Planner]
+    PLAN --> ADK[Google ADK Planner]
+    ORCH --> GD[Goal Decomposer]
+    ORCH --> CS[Conflict Sentinel]
+    ORCH --> CB[Context Bridge]
+    ORCH --> PA[Progress Adaptor]
+    ORCH --> CAL[Calendar Gateway]
+    ORCH --> TSK[Task Gateway]
+    ORCH --> NTS[Notes Gateway]
+    CAL --> GW[Google Workspace Client Factory]
+    TSK --> GW
+    NTS --> GW
+    GW --> GAPI[Google Calendar / Tasks / Keep APIs]
+    API --> DB[(SQLite local / AlloyDB or PostgreSQL prod)]
+    API --> RES[Secret Resolver]
+    API --> OBS[JSON Logs / Optional Sentry]
     MCP1[MCP Calendar Server] --> CAL
     MCP2[MCP Tasks Server] --> TSK
     MCP3[MCP Notes Server] --> NTS
+    SCH[Cloud Scheduler] --> API
+    SM[Secret Manager] --> RES
 ```
 
-## 4. Deployment Topology
+## 4. Deployment topology
 
 ### Local development
 
-- FastAPI app runs with SQLite.
-- MCP servers run as separate local Python processes if needed.
-- Dashboard talks to the API directly.
+- FastAPI runs in VS Code with SQLite by default.
+- Deterministic planning runtime is the default so no external model credential is required.
+- Calendar, task, and notes integrations can run in database mode for demo stability.
+- The UI is served directly from the FastAPI static bundle.
 
 ### Production on GCP
 
-- FastAPI app deploys to Cloud Run.
-- Cloud Scheduler calls cron endpoints for conflict scans and weekly reviews.
-- Database shifts to AlloyDB PostgreSQL.
-- Tool adapters switch from DB-backed local implementations to Google-backed integrations.
-- Secrets move to Secret Manager.
+- Cloud Run serves the FastAPI application.
+- AlloyDB is the primary production persistence target.
+- Secret Manager provides API keys, cron tokens, AlloyDB credentials, and Workspace credentials.
+- Cloud Scheduler triggers conflict scans and weekly reviews through authenticated webhook calls.
+- Google Workspace APIs back Calendar, Tasks, and optional Keep sync.
+- The ADK runtime can use Gemini to improve decomposition while retaining deterministic fallback if unavailable.
 
-## 5. Core Runtime Flows
+## 5. UI topology
 
-### Goal creation
+The frontend is structured as a desktop-first command center with these primary views:
+
+1. Welcome / login
+2. Dashboard
+3. Goal creation
+4. AI plan view
+5. Calendar and schedule
+6. Task board
+7. Replan / adaptation
+8. Notes and memory
+9. API / system status
+
+The UI follows a dark surface model with brand-led accent colors and persistent navigation, matching the product's control-room positioning.
+
+## 6. Core runtime flows
+
+### Goal creation and plan approval
 
 ```mermaid
 sequenceDiagram
     participant U as User
     participant A as API
     participant O as Orchestrator
-    participant G as GoalDecomposer
-    participant C as CalendarGateway
+    participant P as PlanningRuntime
     participant D as Database
+    participant C as CalendarGateway
+    participant T as TaskGateway
     U->>A: POST /api/v1/goals
-    A->>O: create_goal_plan(request)
+    A->>O: create_goal_plan(payload)
     O->>D: persist goal shell
-    O->>G: build_plan(goal, deadline)
-    G-->>O: task DAG + schedule proposal
-    O->>D: persist tasks + DAG
-    O->>C: materialize task blocks
-    O->>D: persist calendar events
-    O-->>A: structured plan
-    A-->>U: goal + tasks + dag
+    O->>P: build_plan(goal, deadline)
+    P-->>O: structured DAG + scheduled tasks
+    O->>D: persist goal, dag, tasks
+    O->>C: create task blocks
+    O->>T: sync generated tasks
+    O-->>A: goal + dag + tasks + events
 ```
 
-### Conflict detection
+### External sync and schedule reconciliation
 
 ```mermaid
 sequenceDiagram
-    participant S as Scheduler/Webhook
+    participant O as Orchestrator
+    participant CAL as CalendarGateway
+    participant TSK as TaskGateway
+    participant NTS as NotesGateway
+    participant GW as GoogleWorkspaceFactory
+    participant G as Google APIs
+    O->>CAL: sync events / create manual block
+    CAL->>GW: build authorized client
+    GW->>G: calendar.events insert/list/update
+    O->>TSK: sync generated tasks / pull status
+    TSK->>GW: build authorized client
+    GW->>G: tasks.tasklists/tasks
+    O->>NTS: create or update note
+    NTS->>GW: build authorized client
+    GW->>G: keep.notes when enabled
+```
+
+### Conflict scan
+
+```mermaid
+sequenceDiagram
+    participant S as Scheduler / Manual Trigger
     participant A as API
     participant O as Orchestrator
     participant C as ConflictSentinel
@@ -92,47 +139,47 @@ sequenceDiagram
     participant D as Database
     S->>A: POST /api/v1/webhooks/cron/conflict-check
     A->>O: run_conflict_scan()
-    O->>C: inspect active goals
-    C->>G: load upcoming events
-    C->>D: load task blocks
-    C-->>O: conflict alerts + resolutions
-    O->>D: persist updates if auto-resolve
-    O-->>A: scan summary
+    O->>G: load upcoming external and system events
+    O->>D: load active task windows
+    O->>C: inspect overlaps and shortages
+    C-->>O: alerts + optional resolutions
+    O->>D: persist alert / reschedule decisions
 ```
 
-### Weekly adaptation
+### Weekly review and adaptation
 
 ```mermaid
 sequenceDiagram
-    participant S as Scheduler/Webhook
+    participant S as Scheduler / Manual Trigger
     participant A as API
     participant O as Orchestrator
     participant P as ProgressAdaptor
-    participant D as Database
     participant C as CalendarGateway
+    participant D as Database
     S->>A: POST /api/v1/webhooks/cron/weekly-review
     A->>O: run_weekly_review()
-    O->>P: evaluate progress
-    P->>D: load goal + tasks
-    P-->>O: deviation + revised schedule
-    O->>C: update task blocks
-    O->>D: persist replan event
-    O-->>A: adaptation summary
+    O->>P: evaluate deviation
+    P->>D: load goal/task state
+    P-->>O: revised task ordering + schedule
+    O->>C: reschedule task blocks
+    O->>D: persist replan event + updated tasks
 ```
 
-## 6. Data Model
+## 7. Data model
 
 ### Goal
 
-- `id`: unique identifier
-- `user_id`: tenant key
-- `title`: natural language goal title
-- `description`: optional detail
-- `domain`: classified planning domain
-- `status`: active, paused, completed
-- `deadline`: target finish date
-- `dag_json`: persisted DAG representation
-- `deviation`: latest progress deviation
+- `id`
+- `user_id`
+- `title`
+- `description`
+- `domain`
+- `status`
+- `deadline`
+- `dag_json`
+- `deviation`
+- `created_at`
+- `updated_at`
 
 ### Task
 
@@ -149,6 +196,7 @@ sequenceDiagram
 - `scheduled_end`
 - `completed_at`
 - `calendar_event_id`
+- `external_task_id`
 - `embedding`
 
 ### CalendarEvent
@@ -158,106 +206,175 @@ sequenceDiagram
 - `goal_id`
 - `task_id`
 - `title`
-- `source`: `system` or `external`
+- `description`
+- `source`
 - `start_at`
 - `end_at`
+- `external_event_id`
 - `metadata_json`
 
-### Note / Context Package / ReplanEvent
+### Note
 
-- Notes store structured summaries.
-- Context packages capture goal-switch briefings.
-- Replan events preserve plan history and adaptation reasons.
+- `id`
+- `user_id`
+- `goal_id`
+- `title`
+- `content`
+- `note_type`
+- `external_note_id`
+- `created_at`
+- `updated_at`
 
-## 7. Module Design
+### ContextPackage
+
+- `id`
+- `user_id`
+- `from_goal_id`
+- `to_goal_id`
+- `summary`
+- `created_at`
+
+### ReplanEvent
+
+- `id`
+- `goal_id`
+- `user_id`
+- `reason`
+- `payload_json`
+- `created_at`
+
+## 8. Module design
 
 ### `telova_api.config`
 
-- Loads environment-driven runtime settings.
-- Centralizes threshold and timezone configuration.
+- Loads environment-driven configuration for runtime mode, Google integrations, auth, logging, Scheduler, and AlloyDB.
+
+### `telova_api.secrets`
+
+- Resolves values from direct env vars, mounted files, or Secret Manager.
+- Keeps credential loading outside business logic.
 
 ### `telova_api.db`
 
 - Creates the async SQLAlchemy engine and session factory.
-- Initializes tables on startup.
+- Supports SQLite, PostgreSQL URLs, and the AlloyDB Python connector.
+
+### `telova_api.logging_utils`
+
+- Configures JSON logging for Cloud Run compatible logs.
+
+### `telova_api.monitoring`
+
+- Wires optional Sentry instrumentation.
+
+### `telova_api.security`
+
+- Adds request ids, structured access logging, API auth, cron auth, and rate limiting.
 
 ### `telova_api.vectorizer`
 
-- Implements deterministic hashed embeddings for local semantic search.
-- Can be replaced by AlloyDB pgvector in production.
+- Provides deterministic hashed embeddings for local semantic search.
+- Can be replaced later with pgvector or managed embedding services.
 
 ### `telova_api.repositories.*`
 
-- Encapsulate persistence logic per aggregate.
-- Keep agent logic free from raw SQL and HTTP concerns.
+- Encapsulate aggregate persistence and external id lookups.
+- Repository methods now support sync reconciliation against Google resources.
 
-### `telova_api.services.scheduling`
+### `telova_api.services.planning_runtime`
 
-- Finds available time windows while respecting busy events.
-- Used by planning, conflict resolution, and re-planning.
+- Abstraction over the planner implementation.
+- Supports deterministic local planning and optional Google ADK orchestration.
 
 ### `telova_api.agents.goal_decomposer`
 
-- Classifies the goal into a planning domain.
-- Builds task blueprints with dependencies.
-- Produces scheduled tasks and a DAG payload.
+- Builds a normalized blueprint and scheduled DAG output.
+- Reused by both deterministic and ADK-assisted runtimes.
 
 ### `telova_api.agents.conflict_sentinel`
 
-- Scans the next time window for overlapping external and system events.
-- Produces suggested or auto-applied resolutions.
+- Scans near-term events for collisions, overload, and free-slot opportunities.
 
 ### `telova_api.agents.context_bridge`
 
-- Summarizes open work when the user switches from one goal to another.
-- Persists a note and a context package record.
+- Creates operational summaries when the user switches context between goals.
 
 ### `telova_api.agents.progress_adaptor`
 
-- Calculates deviation from plan.
-- Reschedules pending work when the threshold is exceeded.
-- Emits a re-plan event for traceability.
+- Evaluates plan deviation and emits revised sequencing when the threshold is crossed.
+
+### `telova_api.integrations.google_workspace`
+
+- Builds Google API clients from authorized user creds, service account creds, or ADC.
+- Centralizes delegated subject handling.
+
+### `telova_api.integrations.calendar`
+
+- Provides database mode and Google Calendar mode.
+- Syncs Telova-managed task blocks and imports non-managed external events.
+
+### `telova_api.integrations.tasks`
+
+- Provides database mode and Google Tasks mode.
+- Pushes generated tasks and pulls remote completion states.
+
+### `telova_api.integrations.notes`
+
+- Provides database mode and optional Google Keep sync.
+- Falls back cleanly when Keep is disabled or unavailable.
 
 ### `telova_api.services.orchestrator`
 
-- Primary coordination layer.
-- Owns goal creation, scan execution, context switching, and weekly review flows.
+- Primary coordination layer for all end-user and scheduler-triggered workflows.
 
-### `telova_api.mcp_servers.*`
+### `telova_api.main`
 
-- Expose calendar, task, and notes capabilities via MCP for hackathon alignment.
+- Wires FastAPI routes, middleware, startup lifecycle, static UI serving, and system readiness reporting.
 
-## 8. API Surface
+### `alembic`
 
-- `GET /health`
+- Owns schema migration history for production promotion.
+
+## 9. API surface
+
 - `GET /`
+- `GET /health`
 - `GET /api/v1/dashboard`
 - `GET /api/v1/goals`
 - `POST /api/v1/goals`
 - `GET /api/v1/goals/{goal_id}`
 - `GET /api/v1/goals/{goal_id}/dag`
+- `GET /api/v1/goals/{goal_id}/tasks`
 - `POST /api/v1/goals/{goal_id}/switch`
 - `PATCH /api/v1/tasks/{task_id}`
+- `GET /api/v1/tasks`
 - `GET /api/v1/tasks/search`
+- `GET /api/v1/notes`
+- `POST /api/v1/notes`
+- `PATCH /api/v1/notes/{note_id}`
 - `GET /api/v1/calendar/events`
 - `POST /api/v1/calendar/events`
 - `POST /api/v1/webhooks/cron/conflict-check`
 - `POST /api/v1/webhooks/cron/weekly-review`
+- `GET /api/v1/system/status`
 
-## 9. Validation and Error Handling
+## 10. Security, resilience, and operability
 
 1. Datetimes are stored as timezone-aware UTC values.
-2. Deadline defaults are generated if the user omits them.
-3. Task status transitions are validated at the API boundary.
-4. Conflict detection ignores unrelated users.
-5. Re-planning never mutates completed tasks.
+2. Task status transitions are validated at the API boundary.
+3. Completed tasks are never mutated during re-plan operations.
+4. API routes can be protected with a shared API key.
+5. Cron routes can be protected separately with a shared cron token.
+6. Request throttling is enforced through in-process rate limiting.
+7. Logs are structured for Cloud Run and optional error reporting via Sentry is available.
+8. Readiness checks expose whether AlloyDB, Workspace auth, Secret Manager, ADK, and Scheduler are actually configured.
 
-## 10. Production Upgrade Path
+## 11. Deployment design
 
-1. Replace SQLite with AlloyDB by changing `DATABASE_URL`.
-2. Move local embeddings to pgvector or AlloyDB AI embedding functions.
-3. Replace DB-backed tool adapters with Google Calendar and Google Tasks adapters.
-4. Wire Secret Manager and Cloud Scheduler.
-5. Optionally wrap the deterministic planners with Gemini/ADK prompts for richer decomposition.
-
-
+1. Develop locally with SQLite and deterministic planning.
+2. Promote to AlloyDB or PostgreSQL using `alembic upgrade head`.
+3. Enable `INTEGRATION_BACKEND=google` when Workspace credentials are ready.
+4. Enable `AGENT_RUNTIME=google_adk` only after the ADK dependencies and model settings are installed.
+5. Turn on `USE_SECRET_MANAGER=true` when the Cloud Run service account can access the required secrets.
+6. Configure Cloud Scheduler jobs for conflict scans and weekly reviews.
+7. Use the system status endpoint and UI to verify deployment readiness after release.

@@ -96,7 +96,7 @@
         <div>
           <span class="hero-chip hero-chip-soft">Welcome back</span>
           <h3>Sign in to your command center</h3>
-          <p>Use demo credentials or continue directly to the Telova workspace.</p>
+          <p>Use the demo flow for local mode, or enter your deployed API key to unlock protected cloud endpoints.</p>
         </div>
 
         <div class="field-group">
@@ -105,8 +105,8 @@
         </div>
 
         <div class="field-group">
-          <label for="welcomePassword">Password</label>
-          <input id="welcomePassword" class="input" type="password" value="demo-pass" placeholder="Enter password">
+          <label for="welcomePassword">Password / API Key</label>
+          <input id="welcomePassword" class="input" type="password" value="demo-pass" placeholder="Enter password or API key">
         </div>
 
         <button id="enterWorkspaceButton" class="button button-primary">Sign In</button>
@@ -615,7 +615,11 @@
                   <p class="card-label">Notes &amp; Memory</p>
                   <h3 id="selectedNoteTitle">Memory workspace</h3>
                 </div>
-                <span class="hero-chip hero-chip-soft" id="selectedNoteType">Draft</span>
+                <div class="button-row">
+                  <span class="hero-chip hero-chip-soft" id="selectedNoteType">Draft</span>
+                  <button id="newNoteButton" class="button button-ghost" type="button">New Note</button>
+                  <button id="saveNoteButton" class="button button-primary" type="button">Save Note</button>
+                </div>
               </div>
               <textarea id="noteEditor" class="note-editor" placeholder="Select a note or draft a new operational brief."></textarea>
             </article>
@@ -682,8 +686,8 @@
             <article class="surface-card">
               <div class="card-header">
                 <div>
-                  <p class="card-label">Last Successful Sync</p>
-                  <h3>Workspace heartbeat</h3>
+                  <p class="card-label">Deployment Readiness</p>
+                  <h3>Cloud handoff state</h3>
                 </div>
               </div>
               <div id="systemHeartbeat"></div>
