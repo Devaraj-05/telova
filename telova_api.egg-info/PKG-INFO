@@ -1,0 +1,91 @@
+Metadata-Version: 2.4
+Name: telova-api
+Version: 0.1.0
+Summary: Telova goal-to-execution orchestrator for the Google multi-agent hackathon.
+Requires-Python: >=3.12
+Description-Content-Type: text/markdown
+Requires-Dist: fastapi<0.136,>=0.135
+Requires-Dist: uvicorn[standard]
+Requires-Dist: sqlalchemy
+Requires-Dist: aiosqlite
+Requires-Dist: pydantic
+Requires-Dist: mcp
+Provides-Extra: dev
+Requires-Dist: httpx; extra == "dev"
+Requires-Dist: pytest; extra == "dev"
+Requires-Dist: pytest-asyncio; extra == "dev"
+Provides-Extra: gcp
+Requires-Dist: google-cloud-alloydb-connector[asyncpg]; extra == "gcp"
+Requires-Dist: asyncpg; extra == "gcp"
+Requires-Dist: google-api-python-client; extra == "gcp"
+Requires-Dist: google-auth-httplib2; extra == "gcp"
+Requires-Dist: google-auth-oauthlib; extra == "gcp"
+Requires-Dist: google-cloud-secret-manager; extra == "gcp"
+Provides-Extra: adk
+Requires-Dist: google-adk; extra == "adk"
+Provides-Extra: prod
+Requires-Dist: alembic; extra == "prod"
+Requires-Dist: sentry-sdk; extra == "prod"
+
+# Telova
+
+Telova is a multi-agent command center that converts a high-level goal into a working execution system across tasks, schedules, notes, re-planning, and tool integrations. The repo is built for local development in VS Code and a production handoff to Google Cloud Run with AlloyDB, Secret Manager, Cloud Scheduler, and Google Workspace integrations.
+
+## What ships in this repo
+
+- FastAPI backend with async SQLAlchemy persistence and Alembic migrations.
+- Command-center UI with welcome, dashboard, goal creation, AI plan graph, calendar, task board, replan, notes, and system status screens.
+- Agent runtime support for deterministic local planning and optional Google ADK / Gemini-backed planning.
+- Integration gateways for database mode and Google-backed Calendar, Tasks, and optional Keep sync.
+- Production middleware for API auth, rate limiting, structured logging, readiness reporting, and optional Sentry.
+- End-to-end API tests plus Cloud Run / Cloud Scheduler deployment assets in `infra/gcp`.
+
+## Local setup in VS Code
+
+```bash
+python -m venv .venv
+.venv\Scripts\activate
+pip install -r requirements.txt
+copy .env.example .env
+uvicorn telova_api.main:app --reload
+```
+
+Open:
+
+- `http://127.0.0.1:8000`
+- `http://127.0.0.1:8000/docs`
+
+## Optional production extras
+
+Install the Google Cloud, ADK, and production extras when you want the full cloud path:
+
+```bash
+pip install ".[gcp,adk,prod]"
+```
+
+## Test and validation
+
+```bash
+python -m compileall telova_api tests
+python -m pytest tests
+node --check telova_api/static/app.js
+```
+
+## Google Cloud Shell to Cloud Run
+
+Use the runbook in [docs/gcp-deployment.md](docs/gcp-deployment.md). The short version is:
+
+1. Clone the repo in Cloud Shell and activate a virtual environment.
+2. Install `requirements.txt`, then `pip install ".[gcp,adk,prod]"`.
+3. Provision AlloyDB and create the needed Secret Manager secrets.
+4. Copy [infra/gcp/cloudrun.env.example.yaml](infra/gcp/cloudrun.env.example.yaml) to your own env file and fill in the project values.
+5. Run `alembic upgrade head`.
+6. Smoke test the app locally in Cloud Shell with `uvicorn telova_api.main:app --host 0.0.0.0 --port 8080`.
+7. Deploy with [infra/gcp/deploy-cloudrun.sh](infra/gcp/deploy-cloudrun.sh).
+8. Create recurring jobs with [infra/gcp/create-scheduler-jobs.sh](infra/gcp/create-scheduler-jobs.sh).
+
+## Docs
+
+- [Architecture and HLD / LLD](docs/hld-lld.md)
+- [Build journal](docs/build-journal.md)
+- [GCP deployment guide](docs/gcp-deployment.md)
