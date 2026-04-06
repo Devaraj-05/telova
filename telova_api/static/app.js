@@ -1,5 +1,4 @@
 const state = {
-  activeView: "dashboard",
   userId: "demo-user",
   profileName: "Devaraj",
   apiKey: "demo-pass",
@@ -7,384 +6,1659 @@ const state = {
   tasks: [],
   notes: [],
   events: [],
-  dashboard: { goals: [], recent_tasks: [], upcoming_events: [], notes: [] },
+  dashboard: null,
   systemStatus: null,
-  goalDags: {},
+  requestHistory: [],
   selectedGoalId: null,
-  selectedTaskId: null,
-  selectedNoteId: null,
-  lastGoalPlan: null,
   latestConflictScan: [],
   latestWeeklyReviews: [],
-  requestHistory: [],
-  selectedPriority: "High",
-  draftPreview: null,
-  draftNoteTitle: "Operational brief",
-  draftNote: "",
-  scheduleDate: new Date(),
+  chatMessages: [],
+  goalDraft: null,
+  pendingPreview: null,
 };
 
-const VIEW_META = {
-  dashboard: ["Command Center", () => `Hello, ${state.profileName}`, "Coordinate goals, schedules, tasks, memory, and adaptive planning from one command center."],
-  goals: ["Goal Intake", () => "Goal Creation", "Capture a high-level objective and approve the next execution lane."],
-  agents: ["Execution Graph", () => "AI Plan View", "Inspect task dependencies, milestone nodes, and specialist ownership."],
-  calendar: ["Schedule Layer", () => "Calendar & Schedule", "Review time blocks, conflict pressure, and open execution windows."],
-  tasks: ["Execution Board", () => "Task Board", "Track backlog, today, in-progress work, and completed output."],
-  activity: ["Adaptation Engine", () => "Replan & Adaptation", "See missed work, deviation pressure, and revised execution sequences."],
-  notes: ["Memory Layer", () => "Notes & Memory", "Store context packages, weekly reviews, and operational notes."],
-  settings: ["Operational Telemetry", () => "API & System Status", "Monitor integrations, database mode, security posture, and workflow logs."],
-};
+const QUICK_PROMPTS = [
+  { action: "send-prompt", prompt: "Help me create a new goal.", label: "Create a goal" },
+  { action: "send-prompt", prompt: "What should I do next?", label: "What should I do next?" },
+  { action: "send-prompt", prompt: "What's due today?", label: "What's due today?" },
+  { action: "run-conflict-scan", label: "Run conflict scan" },
+  { action: "run-weekly-review", label: "Run weekly review" },
+  { action: "send-prompt", prompt: "Remember that I need to capture a note.", label: "Capture a note" },
+];
 
+const PRIORITY_CHOICES = ["High", "Balanced", "Flexible"];
 const els = {};
 let loadingTimer = null;
-let searchTimer = null;
+let messageCounter = 0;
 
 document.addEventListener("DOMContentLoaded", init);
 
 function init() {
   [
-    "welcomeScreen","enterWorkspaceButton","continueGoogleButton","welcomeEmail","welcomePassword","appShell","sidebarNav",
-    "headerEyebrow","headerTitle","headerSubtitle","statusBanner","agentPulseRow","globalSearchInput","sidebarSearch","searchResults",
-    "refreshWorkspaceButton","runConflictsButton","headerNewGoalButton","dashboardGoalOverview","metricActiveGoals","metricTaskVelocity",
-    "dashboardSchedule","todayScheduleBadge","dashboardSuggestions","dashboardProgress","dashboardAgents","dashboardAlerts","dashboardOpenPlanButton",
-    "dashboardWeeklyReviewButton","goalUserId","goalTextInput","goalDeadlineInput","goalHorizonInput","goalDescriptionInput","priorityRow",
-    "generatePlanButton","draftPlanButton","previewModeChip","previewSummary","previewMilestones","previewSchedule","previewRisks",
-    "approvePlanButton","editPreviewButton","planGoalSummary","planMilestones","planAgentAssignments","planGoalSelect","planToCalendarButton",
-    "graphEdges","graphNodes","taskDetailPanel","scheduleDateInput","calendarSyncButton","calendarAddTaskButton","miniCalendar","deadlineList",
-    "connectedToolsList","plannerGrid","calendarConflicts","calendarRecommendations","freeSlotsList","taskBoardSearch","taskBoardFilter",
-    "backlogColumn","todayColumn","inProgressColumn","completedColumn","backlogCount","todayCount","progressCount","completedCount",
-    "replanInsightCard","missedTaskTimeline","reasonTags","replanSummary","replanChanges","runWeeklyReviewButton","rejectReplanButton",
-    "noteFolders","selectedNoteTitle","selectedNoteType","noteEditor","newNoteButton","saveNoteButton","linkedContext","systemAgents",
-    "systemConnections","systemDatabase","systemWorkflowLogs","systemRequestHistory","systemHeartbeat","loadingModal","loadingTitle",
-    "loadingMessage","adaptiveModal","adaptiveModalContent","closeAdaptiveModalButton","adaptiveGoDashboardButton","adaptiveOpenActivityButton",
-    "profileName","profileRole","profileAvatar"
-  ].forEach((id) => { els[id] = document.getElementById(id); });
+    "welcomeScreen",
+    "welcomeEmail",
+    "welcomePassword",
+    "enterWorkspaceButton",
+    "continueGoogleButton",
+    "appShell",
+    "quickPromptList",
+    "goalCount",
+    "goalList",
+    "sidebarConnections",
+    "profileAvatar",
+    "profileName",
+    "profileRole",
+    "workspaceTitle",
+    "workspaceSubtitle",
+    "workspaceStatus",
+    "chatThread",
+    "suggestionRow",
+    "chatComposer",
+    "sendMessageButton",
+    "contextGoal",
+    "contextProgress",
+    "contextSchedule",
+    "contextNotes",
+    "contextSystem",
+    "loadingModal",
+    "loadingTitle",
+    "loadingMessage",
+  ].forEach((id) => {
+    els[id] = document.getElementById(id);
+  });
 
   els.enterWorkspaceButton.addEventListener("click", enterWorkspace);
   els.continueGoogleButton.addEventListener("click", enterWorkspace);
-  els.sidebarNav.addEventListener("click", (e) => { const b = e.target.closest("[data-view]"); if (b) switchView(b.dataset.view); });
-  els.headerNewGoalButton.addEventListener("click", () => switchView("goals"));
-  els.dashboardOpenPlanButton.addEventListener("click", () => switchView("agents"));
-  els.dashboardWeeklyReviewButton.addEventListener("click", runWeeklyReview);
-  els.runWeeklyReviewButton.addEventListener("click", runWeeklyReview);
-  els.rejectReplanButton.addEventListener("click", () => { state.latestWeeklyReviews = []; renderReplan(); });
-  els.refreshWorkspaceButton.addEventListener("click", refreshWorkspace);
-  els.runConflictsButton.addEventListener("click", runConflictScan);
-  els.goalTextInput.addEventListener("input", refreshDraftPreview);
-  els.goalDescriptionInput.addEventListener("input", refreshDraftPreview);
-  els.goalHorizonInput.addEventListener("change", refreshDraftPreview);
-  els.goalDeadlineInput.addEventListener("change", refreshDraftPreview);
-  els.priorityRow.addEventListener("click", handlePriorityClick);
-  els.generatePlanButton.addEventListener("click", generateGoalPlan);
-  els.draftPlanButton.addEventListener("click", refreshDraftPreview);
-  els.approvePlanButton.addEventListener("click", approveGeneratedPlan);
-  els.editPreviewButton.addEventListener("click", () => els.goalTextInput.focus());
-  els.planGoalSelect.addEventListener("change", handleGoalSelection);
-  els.planToCalendarButton.addEventListener("click", () => switchView("calendar"));
-  els.scheduleDateInput.addEventListener("change", () => { state.scheduleDate = parseDate(els.scheduleDateInput.value) || new Date(); renderCalendar(); });
-  els.calendarSyncButton.addEventListener("click", refreshWorkspace);
-  els.calendarAddTaskButton.addEventListener("click", createCalendarBlock);
-  els.taskBoardSearch.addEventListener("input", renderBoard);
-  els.taskBoardFilter.addEventListener("change", renderBoard);
-  els.globalSearchInput.addEventListener("input", runSearch);
-  els.sidebarSearch.addEventListener("input", () => { els.globalSearchInput.value = els.sidebarSearch.value; runSearch(); });
-  els.noteEditor.addEventListener("input", () => { state.draftNote = els.noteEditor.value; });
-  els.newNoteButton.addEventListener("click", newNote);
-  els.saveNoteButton.addEventListener("click", saveNote);
-  els.closeAdaptiveModalButton.addEventListener("click", hideAdaptive);
-  els.adaptiveGoDashboardButton.addEventListener("click", () => { hideAdaptive(); switchView("dashboard"); });
-  els.adaptiveOpenActivityButton.addEventListener("click", () => { hideAdaptive(); switchView("activity"); });
-  document.addEventListener("click", handleActionClick);
+  els.sendMessageButton.addEventListener("click", sendComposerMessage);
+  els.chatComposer.addEventListener("keydown", handleComposerKeydown);
+  els.chatComposer.addEventListener("input", autoResizeComposer);
+  document.addEventListener("click", handleDocumentClick);
 
-  const future = new Date(Date.now() + 180 * 24 * 60 * 60 * 1000);
-  els.goalDeadlineInput.value = toDateTimeInput(future);
-  els.scheduleDateInput.value = toDateInput(new Date());
-  refreshDraftPreview();
-  renderAgents();
-  updateHeader();
+  renderQuickPromptList();
+  renderSuggestionRow();
+  autoResizeComposer();
 }
 
 async function enterWorkspace() {
   state.profileName = prettyName(els.welcomeEmail.value || state.userId);
-  state.userId = (els.goalUserId.value || userIdFromEmail(els.welcomeEmail.value) || "demo-user").trim();
+  state.userId = userIdFromEmail(els.welcomeEmail.value) || "demo-user";
   state.apiKey = (els.welcomePassword.value || "").trim();
-  els.goalUserId.value = state.userId;
-  els.profileName.textContent = state.profileName;
-  els.profileRole.textContent = `Operator, ${state.userId}`;
-  els.profileAvatar.textContent = initials(state.profileName);
-  showLoading("Hydrating workspace", ["Syncing dashboard data.", "Loading graph, planner, and telemetry."]);
+
+  hydrateProfile();
+  showLoading("Opening workspace", [
+    "Loading goals, tasks, schedule, and notes.",
+    "Preparing the Telova agent conversation.",
+  ]);
+
   try {
     await loadWorkspace();
+    ensureConversation();
     els.welcomeScreen.classList.add("is-hidden");
     els.appShell.classList.remove("is-hidden");
-    switchView("dashboard");
-    showStatus("Workspace ready.", "success");
+    renderAll();
+    setStatus("Workspace ready");
   } catch (error) {
-    showStatus(readError(error), "danger");
-  } finally {
-    hideLoading();
-  }
-}
-
-async function refreshWorkspace() {
-  showLoading("Refreshing workspace", ["Pulling latest API state.", "Updating command center surfaces."]);
-  try {
-    await loadWorkspace();
-    showStatus("Workspace refreshed successfully.", "success");
-  } catch (error) {
-    showStatus(readError(error), "danger");
+    setStatus(readError(error));
   } finally {
     hideLoading();
   }
 }
 
 async function loadWorkspace() {
-  const user = currentUser();
-  const q = encodeURIComponent(user);
+  const user = encodeURIComponent(state.userId);
   const [dashboard, goals, tasks, notes, events, systemStatus] = await Promise.all([
-    fetchJson(`/api/v1/dashboard?user_id=${q}`),
-    fetchJson(`/api/v1/goals?user_id=${q}`),
-    fetchJson(`/api/v1/tasks?user_id=${q}`),
-    fetchJson(`/api/v1/notes?user_id=${q}`),
-    fetchJson(`/api/v1/calendar/events?user_id=${q}`),
-    fetchJson(`/api/v1/system/status?user_id=${q}`),
+    fetchJson(`/api/v1/dashboard?user_id=${user}`),
+    fetchJson(`/api/v1/goals?user_id=${user}`),
+    fetchJson(`/api/v1/tasks?user_id=${user}`),
+    fetchJson(`/api/v1/notes?user_id=${user}`),
+    fetchJson(`/api/v1/calendar/events?user_id=${user}`),
+    fetchJson(`/api/v1/system/status?user_id=${user}`),
   ]);
-  Object.assign(state, { userId: user, dashboard, goals, tasks, notes, events, systemStatus });
-  if (!state.selectedGoalId || !state.goals.some((g) => g.id === state.selectedGoalId)) state.selectedGoalId = state.goals[0]?.id || null;
-  if (!state.selectedTaskId || !state.tasks.some((t) => t.id === state.selectedTaskId)) state.selectedTaskId = tasksForGoal(state.selectedGoalId)[0]?.id || state.tasks[0]?.id || null;
-  if (!state.selectedNoteId || !state.notes.some((n) => n.id === state.selectedNoteId)) state.selectedNoteId = state.notes[0]?.id || null;
-  if (state.selectedGoalId) await ensureGoalDag(state.selectedGoalId);
-  if (state.selectedNoteId) state.draftNoteTitle = noteById(state.selectedNoteId)?.title || state.draftNoteTitle;
-  if (!state.lastGoalPlan && state.selectedGoalId && state.goalDags[state.selectedGoalId]) state.lastGoalPlan = { goal: goal(), dag: state.goalDags[state.selectedGoalId], tasks: tasksForGoal(state.selectedGoalId), calendar_events: state.events.filter((e) => e.goal_id === state.selectedGoalId) };
+
+  state.dashboard = dashboard;
+  state.goals = goals;
+  state.tasks = tasks;
+  state.notes = notes;
+  state.events = events;
+  state.systemStatus = systemStatus;
+
+  if (!state.selectedGoalId || !state.goals.some((goal) => goal.id === state.selectedGoalId)) {
+    state.selectedGoalId = state.goals[0]?.id || null;
+  }
+
   renderAll();
 }
 
-async function ensureGoalDag(goalId) { if (goalId && !state.goalDags[goalId]) state.goalDags[goalId] = await fetchJson(`/api/v1/goals/${goalId}/dag`); return state.goalDags[goalId]; }
-function switchView(name) { state.activeView = name; document.querySelectorAll(".view").forEach((v) => v.classList.toggle("is-active", v.dataset.view === name)); document.querySelectorAll(".nav-item").forEach((b) => b.classList.toggle("is-active", b.dataset.view === name)); updateHeader(); }
-function updateHeader() { const [eyebrow, title, subtitle] = VIEW_META[state.activeView] || VIEW_META.dashboard; els.headerEyebrow.textContent = eyebrow; els.headerTitle.textContent = typeof title === "function" ? title() : title; els.headerSubtitle.textContent = subtitle; }
-function renderAll() { renderAgents(); renderPreview(); renderDashboard(); renderPlan(); renderCalendar(); renderBoard(); renderReplan(); renderNotes(); renderSystem(); updateHeader(); }
-function goal() { return state.goals.find((g) => g.id === state.selectedGoalId) || null; }
-function noteById(id) { return state.notes.find((n) => n.id === id) || null; }
-function taskById(id) { return state.tasks.find((t) => t.id === id) || null; }
-function tasksForGoal(goalId) { return state.tasks.filter((t) => t.goal_id === goalId).sort((a, b) => a.order_index - b.order_index); }
-function currentUser() { return (els.goalUserId?.value || state.userId || "demo-user").trim() || "demo-user"; }
+function ensureConversation() {
+  if (state.chatMessages.length) return;
 
-function handlePriorityClick(e) {
-  const b = e.target.closest("[data-priority]");
-  if (!b) return;
-  state.selectedPriority = b.dataset.priority;
-  document.querySelectorAll(".priority-pill").forEach((pill) => pill.classList.toggle("is-active", pill.dataset.priority === state.selectedPriority));
-  refreshDraftPreview();
+  addAssistantMessage({
+    title: "Telova is ready",
+    text: state.goals.length
+      ? "Ask me about your active goals, progress, upcoming schedule, notes, conflicts, or tell me what new goal you want to plan."
+      : "Tell me the goal you want to achieve. I’ll collect the missing deadline, constraints, and priority before I draft your plan.",
+    cards: buildWorkspaceSummaryCards(),
+    actions: [
+      { action: "send-prompt", prompt: "Help me create a new goal.", label: "Create a goal", variant: "primary" },
+      { action: "send-prompt", prompt: "What's due today?", label: "What's due today?", variant: "secondary" },
+      { action: "send-prompt", prompt: "How is my progress?", label: "Show progress", variant: "secondary" },
+    ],
+  });
 }
 
-async function handleGoalSelection(e) {
-  state.selectedGoalId = e.target.value || null;
-  await ensureGoalDag(state.selectedGoalId);
-  state.selectedTaskId = tasksForGoal(state.selectedGoalId)[0]?.id || null;
+function renderAll() {
+  hydrateProfile();
+  renderQuickPromptList();
+  renderSuggestionRow();
+  renderSidebarGoals();
+  renderSidebarConnections();
+  renderWorkspaceHeader();
+  renderChatThread();
+  renderContextRail();
+}
+
+function hydrateProfile() {
+  els.profileName.textContent = state.profileName;
+  els.profileRole.textContent = `Operator, ${state.userId}`;
+  els.profileAvatar.textContent = initials(state.profileName);
+}
+
+function renderQuickPromptList() {
+  els.quickPromptList.innerHTML = QUICK_PROMPTS.map((item) => actionChip(item, "action-chip")).join("");
+}
+
+function renderSuggestionRow() {
+  const items = state.pendingPreview
+    ? [
+        { action: "approve-plan", label: "Approve plan" },
+        { action: "revise-plan", label: "Request changes" },
+        { action: "send-prompt", prompt: "Show me the tasks in the preview again.", label: "Preview tasks" },
+        { action: "send-prompt", prompt: "What’s due today?", label: "Today’s schedule" },
+      ]
+    : state.goalDraft
+    ? [
+        { action: "send-prompt", prompt: "Cancel this draft.", label: "Cancel draft" },
+        { action: "send-prompt", prompt: "Use a high priority plan.", label: "High priority" },
+        { action: "send-prompt", prompt: "No constraints.", label: "No constraints" },
+        { action: "send-prompt", prompt: "Deadline in 6 months.", label: "Deadline in 6 months" },
+      ]
+    : QUICK_PROMPTS.slice(0, 4);
+
+  els.suggestionRow.innerHTML = items.map((item) => actionChip(item, "action-chip")).join("");
+}
+
+function renderSidebarGoals() {
+  els.goalCount.textContent = String(state.goals.length);
+
+  if (!state.goals.length) {
+    els.goalList.innerHTML = emptyState("No goals yet", "Start a conversation to create your first goal.");
+    return;
+  }
+
+  els.goalList.innerHTML = state.goals.map((goal) => {
+    const tasks = tasksForGoal(goal.id);
+    const done = tasks.filter((task) => task.status === "done").length;
+    const cls = goal.id === state.selectedGoalId ? "goal-item is-active" : "goal-item";
+    return `
+      <button class="${cls}" type="button" data-action="select-goal" data-goal-id="${esc(goal.id)}">
+        <strong>${esc(goal.title)}</strong>
+        <p class="goal-meta">${esc(human(goal.domain))} | ${done}/${tasks.length || 0} done</p>
+      </button>
+    `;
+  }).join("");
+}
+
+function renderSidebarConnections() {
+  const connections = state.systemStatus?.connections || [];
+  if (!connections.length) {
+    els.sidebarConnections.innerHTML = emptyState("No sync data", "Connections appear after the workspace loads.");
+    return;
+  }
+
+  els.sidebarConnections.innerHTML = connections.slice(0, 4).map((connection) => `
+    <div class="connection-pill">
+      <div>
+        <strong>${esc(connection.name)}</strong>
+        <p class="goal-meta">${esc(connection.kind)}</p>
+      </div>
+      <span class="tag ${toneForStatus(connection.status)}">${esc(human(connection.status))}</span>
+    </div>
+  `).join("");
+}
+
+function renderWorkspaceHeader() {
+  const current = selectedGoal();
+  els.workspaceTitle.textContent = current ? current.title : `Hello, ${state.profileName}`;
+  els.workspaceSubtitle.textContent = current
+    ? "Chat with Telova to inspect progress, review time pressure, adapt the plan, or capture new notes around this goal."
+    : "Chat with Telova to create goals, inspect schedule pressure, review tasks, track progress, and capture notes.";
+}
+
+function renderChatThread() {
+  els.chatThread.innerHTML = state.chatMessages.map(renderMessage).join("");
+  requestAnimationFrame(() => {
+    els.chatThread.scrollTop = els.chatThread.scrollHeight;
+  });
+}
+
+function renderContextRail() {
+  renderContextGoal();
+  renderContextProgress();
+  renderContextSchedule();
+  renderContextNotes();
+  renderContextSystem();
+}
+
+function renderContextGoal() {
+  const goal = selectedGoal();
+  if (!goal) {
+    els.contextGoal.innerHTML = emptyState("No active goal", "Create a goal in chat and Telova will turn it into a scheduled execution plan.");
+    return;
+  }
+
+  const tasks = tasksForGoal(goal.id);
+  const nextTask = tasks.find((task) => task.status !== "done");
+  els.contextGoal.innerHTML = `
+    <div class="context-row">
+      <strong>${esc(goal.title)}</strong>
+      <p class="card-copy">${esc(goal.description || "No additional context saved yet.")}</p>
+      <div class="plan-meta">
+        <span class="tag">${esc(human(goal.domain))}</span>
+        <span class="tag">${esc(formatDate(goal.deadline))}</span>
+      </div>
+    </div>
+    ${nextTask ? `
+      <div class="context-row">
+        <strong>Next task</strong>
+        <p class="card-copy">${esc(nextTask.title)}</p>
+        <div class="plan-meta">
+          <span class="tag ${toneForStatus(nextTask.status)}">${esc(human(nextTask.status))}</span>
+          <span class="tag">${esc(formatDate(nextTask.scheduled_start))}</span>
+        </div>
+      </div>
+    ` : ""}
+  `;
+}
+
+function renderContextProgress() {
+  const tasks = selectedGoal() ? tasksForGoal(state.selectedGoalId) : state.tasks;
+  if (!tasks.length) {
+    els.contextProgress.innerHTML = emptyState("No tasks yet", "Approved plans will create a live task list here.");
+    return;
+  }
+
+  const done = tasks.filter((task) => task.status === "done").length;
+  const active = tasks.filter((task) => task.status === "active").length;
+  const blocked = tasks.filter((task) => task.status === "blocked").length;
+  const pending = tasks.filter((task) => task.status === "pending").length;
+  const completion = Math.round((done / tasks.length) * 100);
+
+  els.contextProgress.innerHTML = `
+    <div class="progress-block">
+      <div class="context-row">
+        <strong>Completion</strong>
+        <p class="card-copy">${completion}% of the current lane is done.</p>
+        <div class="progress-line"><span style="width:${completion}%"></span></div>
+      </div>
+      ${metricRow("Completed", `${done}`)}
+      ${metricRow("In progress", `${active}`)}
+      ${metricRow("Pending", `${pending}`)}
+      ${blocked ? metricRow("Blocked", `${blocked}`) : ""}
+    </div>
+  `;
+}
+
+function renderContextSchedule() {
+  const events = todayEvents().slice(0, 6);
+  if (!events.length) {
+    els.contextSchedule.innerHTML = emptyState("No schedule blocks today", "Ask Telova about your calendar or approve a new goal to see fresh execution blocks.");
+    return;
+  }
+
+  els.contextSchedule.innerHTML = `<div class="schedule-list">${events.map((event) => `
+    <div class="list-row">
+      <strong>${esc(event.title)}</strong>
+      <p class="list-copy">${esc(formatTimeRange(event.start_at, event.end_at))}</p>
+      <div class="plan-meta">
+        <span class="tag ${event.source === "system" ? "success" : ""}">${esc(human(event.source))}</span>
+      </div>
+    </div>
+  `).join("")}</div>`;
+}
+
+function renderContextNotes() {
+  const notes = relatedNotes().slice(0, 4);
+  if (!notes.length) {
+    els.contextNotes.innerHTML = emptyState("No recent notes", "Use chat to capture context and Telova will sync it into memory.");
+    return;
+  }
+
+  els.contextNotes.innerHTML = `<div class="note-list">${notes.map((note) => `
+    <div class="list-row">
+      <strong>${esc(note.title)}</strong>
+      <p class="list-copy">${esc(truncate(note.content, 120))}</p>
+      <div class="plan-meta">
+        <span class="tag">${esc(human(note.note_type))}</span>
+        <span class="tag">${esc(formatDate(note.created_at))}</span>
+      </div>
+    </div>
+  `).join("")}</div>`;
+}
+
+function renderContextSystem() {
+  const system = state.systemStatus;
+  if (!system) {
+    els.contextSystem.innerHTML = emptyState("System status unavailable", "The health panel will appear after the workspace loads.");
+    return;
+  }
+
+  const readiness = system.readiness.slice(0, 4).map((item) => `
+    <div class="list-row">
+      <strong>${esc(item.name)}</strong>
+      <p class="list-copy">${esc(item.detail)}</p>
+      <div class="plan-meta">
+        <span class="tag ${item.status === "ready" ? "success" : "warning"}">${esc(human(item.status))}</span>
+      </div>
+    </div>
+  `).join("");
+
+  els.contextSystem.innerHTML = `
+    <div class="context-row">
+      <strong>${esc(system.app)}</strong>
+      <p class="card-copy">${esc(system.environment)} | ${esc(system.runtime_mode)}</p>
+      <div class="plan-meta">
+        <span class="tag">${esc(human(system.integration_backend))}</span>
+        <span class="tag">${esc(human(system.orchestration_runtime))}</span>
+      </div>
+    </div>
+    ${readiness}
+  `;
+}
+
+async function sendComposerMessage() {
+  const text = (els.chatComposer.value || "").trim();
+  if (!text) return;
+  els.chatComposer.value = "";
+  autoResizeComposer();
+  await handleUserMessage(text);
+}
+
+async function handleUserMessage(text) {
+  addUserMessage(text);
+  renderChatThread();
+
+  if (isCancelIntent(text)) {
+    state.goalDraft = null;
+    state.pendingPreview = null;
+    addAssistantMessage({
+      text: "Cancelled the current planning draft. You can start over any time by telling me the goal you want to achieve.",
+    });
+    renderAll();
+    return;
+  }
+
+  if (isRefreshIntent(text)) {
+    await refreshWorkspaceInChat();
+    return;
+  }
+
+  if (state.pendingPreview) {
+    const handledPreview = await handlePendingPreviewResponse(text);
+    if (handledPreview) return;
+  }
+
+  if (state.goalDraft) {
+    await continueGoalDraft(text);
+    return;
+  }
+
+  if (await maybeHandleOperationalIntent(text)) {
+    return;
+  }
+
+  if (isGoalCreationIntent(text) || (!state.goals.length && !looksLikeQuestion(text))) {
+    await startGoalDraft(text);
+    return;
+  }
+
+  addAssistantMessage({
+    text: "I can help with goal planning, schedule questions, task progress, note capture, conflict scans, weekly reviews, and system sync status. Tell me what you want to achieve, or ask something like “What should I do next?”",
+    actions: [
+      { action: "send-prompt", prompt: "Help me create a new goal.", label: "Create a goal", variant: "primary" },
+      { action: "send-prompt", prompt: "What should I do next?", label: "What should I do next?", variant: "secondary" },
+    ],
+  });
   renderAll();
 }
 
-function refreshDraftPreview() { state.lastGoalPlan = null; state.draftPreview = buildDraft(); renderPreview(); }
+async function startGoalDraft(text) {
+  const extractedGoal = extractGoalText(text);
+  const inferredConstraints = extractConstraintHints(text);
+  state.goalDraft = {
+    goal: extractedGoal,
+    description: null,
+    deadline: parseDeadlineInput(text),
+    constraints: inferredConstraints,
+    constraintsConfirmed: inferredConstraints.length > 0,
+    priority: parsePriority(text),
+    awaiting: extractedGoal ? null : "goal",
+  };
 
-function buildDraft() {
-  const text = (els.goalTextInput.value || "").trim() || "Declare a new command center goal";
-  const desc = (els.goalDescriptionInput.value || "").trim();
-  const horizon = els.goalHorizonInput.value || "6 months";
-  const deadline = parseDateTime(els.goalDeadlineInput.value);
-  const domain = /(promot|senior|career|staff|leadership)/i.test(text) ? "career" : /(launch|ship|deploy|release|mvp|product)/i.test(text) ? "product" : /(learn|practice|study|interview|prepare|skill)/i.test(text) ? "learning" : "generic";
-  const table = { career: [["Clarify rubric","Map sponsors","Lead a visible initiative","Package the narrative"],["Calendar fragmentation can weaken focus","Evidence has to be captured weekly","Stakeholder alignment should happen early"]], product: [["Define scope","Validate users","Build the MVP","Harden and launch"],["Scope creep can dilute the MVP","Validation must happen before hardening","Late calendar pressure can starve test time"]], learning: [["Define target skill","Assess the baseline","Run deliberate practice","Apply and review"],["Practice without feedback can flatten progress","Skipping applied work weakens transfer","Recurring reviews prevent drift"]], generic: [["Define the outcome","Break into milestones","Reserve execution windows","Review and adapt"],["Vague goals create vague execution","Hidden dependencies break schedules","Missed reviews hide drift"]] };
-  const [milestones, risks] = table[domain];
-  return { mode: "draft", summary: `${text}. Priority lane: ${state.selectedPriority}. Horizon: ${horizon}.${deadline ? ` Target date: ${fmt(deadline.toISOString())}.` : ""}${desc ? ` Context: ${desc}` : ""}`, milestones, schedule: milestones.map((m, i) => `Phase ${i + 1}: ${m}`), risks };
+  if (!extractedGoal) {
+    addAssistantMessage({
+      text: "What is the goal you want me to plan? Give me the outcome in one sentence, and I’ll take it from there.",
+    });
+    renderAll();
+    return;
+  }
+
+  addAssistantMessage({
+    title: "Goal intake started",
+    text: `I’m planning for "${extractedGoal}". I’ll collect the missing details here, then I’ll preview the task DAG in chat before anything is created.`,
+  });
+  await askNextGoalQuestionOrPreview();
 }
 
-function renderPreview() {
-  const live = state.lastGoalPlan?.goal ? { mode: "live", summary: `Telova generated a ${human(goal().domain)} execution lane with ${state.lastGoalPlan.tasks.length} task nodes and ${state.lastGoalPlan.dag.milestones.length} milestones.`, milestones: state.lastGoalPlan.tasks.filter((t) => state.lastGoalPlan.dag.milestones.includes(t.id)).map((t) => `${t.title} | ${fmt(t.scheduled_start)}`), schedule: state.lastGoalPlan.tasks.slice(0, 5).map((t) => `${t.title} | ${fmt(t.scheduled_start)} -> ${fmt(t.scheduled_end)}`), risks: ["External commitments can trigger re-sequencing.", "Long blocks need protected focus time.", "Weekly reviews prevent hidden drift."] } : null;
-  const p = live || state.draftPreview || buildDraft();
-  els.previewModeChip.textContent = p.mode === "live" ? "Live Plan" : "Draft";
-  els.previewSummary.textContent = p.summary;
-  els.previewMilestones.innerHTML = listHtml(p.milestones);
-  els.previewSchedule.innerHTML = listHtml(p.schedule);
-  els.previewRisks.innerHTML = listHtml(p.risks, "warning");
-  els.approvePlanButton.disabled = !live;
+async function continueGoalDraft(text) {
+  const draft = state.goalDraft;
+  if (!draft) return;
+
+  if (draft.awaiting === "goal") {
+    draft.goal = text.trim();
+    draft.deadline = draft.deadline || parseDeadlineInput(text);
+    draft.priority = draft.priority || parsePriority(text);
+  } else if (draft.awaiting === "deadline") {
+    const deadline = parseDeadlineInput(text);
+    if (!deadline) {
+      addAssistantMessage({
+        text: "I couldn’t read that deadline. Try something like “in 6 months”, “by 2026-09-30”, or “next Friday”.",
+      });
+      renderAll();
+      return;
+    }
+    draft.deadline = deadline;
+  } else if (draft.awaiting === "constraints") {
+    if (isNoneIntent(text)) {
+      draft.constraints = [];
+    } else {
+      draft.constraints = splitConstraints(text);
+    }
+    draft.constraintsConfirmed = true;
+  } else if (draft.awaiting === "priority") {
+    const priority = parsePriority(text);
+    if (!priority) {
+      addAssistantMessage({
+        text: "Pick a priority lane: High, Balanced, or Flexible.",
+        actions: PRIORITY_CHOICES.map((choice) => ({
+          action: "choose-priority",
+          value: choice,
+          label: choice,
+          variant: choice === "High" ? "primary" : "secondary",
+        })),
+      });
+      renderAll();
+      return;
+    }
+    draft.priority = priority;
+  } else if (draft.awaiting === "revision") {
+    applyRevisionToDraft(text, draft);
+  }
+
+  await askNextGoalQuestionOrPreview();
 }
 
-async function generateGoalPlan() {
-  const payload = { user_id: currentUser(), goal: (els.goalTextInput.value || "").trim(), description: (els.goalDescriptionInput.value || "").trim() || null, deadline: parseDateTime(els.goalDeadlineInput.value)?.toISOString() || null };
-  if (!payload.goal) return showStatus("Add a goal before generating a plan.", "warning");
-  showLoading("Orchestrator planning", ["Building the dependency graph.", "Reserving execution windows."]);
+async function askNextGoalQuestionOrPreview() {
+  const draft = state.goalDraft;
+  if (!draft) return;
+
+  if (!draft.goal) {
+    draft.awaiting = "goal";
+    addAssistantMessage({ text: "What outcome are we planning for?" });
+    renderAll();
+    return;
+  }
+
+  if (!draft.deadline) {
+    draft.awaiting = "deadline";
+    addAssistantMessage({
+      text: "What deadline should I plan against? You can reply with “in 6 months”, “by 2026-09-30”, or something similar.",
+    });
+    renderAll();
+    return;
+  }
+
+  if (!draft.constraintsConfirmed) {
+    draft.awaiting = "constraints";
+    addAssistantMessage({
+      text: "Any constraints I should respect while scheduling? Examples: weekdays only, 1 hour per day, avoid late evenings. Reply with “none” if there are no constraints.",
+    });
+    renderAll();
+    return;
+  }
+
+  if (!draft.priority) {
+    draft.awaiting = "priority";
+    addAssistantMessage({
+      text: "What priority should I plan for?",
+      actions: PRIORITY_CHOICES.map((choice) => ({
+        action: "choose-priority",
+        value: choice,
+        label: choice,
+        variant: choice === "High" ? "primary" : "secondary",
+      })),
+    });
+    renderAll();
+    return;
+  }
+
+  draft.awaiting = "preview";
+  await previewGoalDraft();
+}
+
+async function previewGoalDraft() {
+  const draft = state.goalDraft;
+  if (!draft) return;
+
+  showLoading("Drafting your plan", [
+    "Generating the task DAG and execution windows.",
+    "Preparing the preview before anything is created.",
+  ]);
+
   try {
-    const plan = await fetchJson("/api/v1/goals", { method: "POST", body: JSON.stringify(payload) });
-    state.lastGoalPlan = plan;
-    state.selectedGoalId = plan.goal.id;
-    state.selectedTaskId = plan.tasks[0]?.id || null;
-    state.goalDags[plan.goal.id] = plan.dag;
-    await loadWorkspace();
-    showStatus(`Generated a live plan for "${plan.goal.title}".`, "success");
+    const preview = await fetchJson("/api/v1/goals/preview", {
+      method: "POST",
+      body: JSON.stringify(buildGoalPayload(draft)),
+    });
+    state.pendingPreview = preview;
+    addAssistantMessage({
+      title: "Plan preview ready",
+      text: preview.summary,
+      plan: preview,
+      actions: [
+        { action: "approve-plan", label: "Approve plan", variant: "primary" },
+        { action: "revise-plan", label: "Request changes", variant: "secondary" },
+      ],
+    });
+    setStatus("Preview ready");
   } catch (error) {
-    showStatus(readError(error), "danger");
+    addAssistantMessage({
+      text: `I couldn’t generate the preview: ${readError(error)}`,
+    });
+    setStatus(readError(error));
   } finally {
     hideLoading();
+    renderAll();
   }
 }
 
-function approveGeneratedPlan() { if (!state.lastGoalPlan?.goal?.id) return showStatus("Generate a live plan before approving it.", "warning"); state.selectedGoalId = state.lastGoalPlan.goal.id; state.selectedTaskId = state.lastGoalPlan.tasks[0]?.id || null; switchView("agents"); renderPlan(); showStatus("Plan approved. Inspect the graph and task detail drawer.", "success"); }
+async function handlePendingPreviewResponse(text) {
+  if (isApprovalIntent(text)) {
+    await approvePendingPlan();
+    return true;
+  }
 
-function renderAgents() {
-  const agents = state.systemStatus?.agents || [{ name: "Orchestrator", status: "active" }, { name: "Scheduler", status: "ready" }, { name: "Research", status: "ready" }, { name: "Memory", status: "ready" }, { name: "Execution", status: "monitoring" }];
-  els.agentPulseRow.innerHTML = agents.map((a) => `<span class="agent-pill" style="color:${agentColor(a.name)}">${esc(a.name)} | ${esc(a.status)}</span>`).join("");
+  if (isRevisionIntent(text)) {
+    if (hasRevisionPayload(text)) {
+      state.goalDraft.awaiting = "revision";
+      state.pendingPreview = null;
+      applyRevisionToDraft(text, state.goalDraft);
+      await askNextGoalQuestionOrPreview();
+      return true;
+    }
+    requestPlanRevision();
+    return true;
+  }
+
+  addAssistantMessage({
+    text: "I have the preview ready. Say “approve”, click Approve plan, or tell me what you want changed and I’ll re-draft it.",
+    actions: [
+      { action: "approve-plan", label: "Approve plan", variant: "primary" },
+      { action: "revise-plan", label: "Request changes", variant: "secondary" },
+    ],
+  });
+  renderAll();
+  return true;
 }
 
-function renderDashboard() {
-  const g = goal(); const tasks = g ? tasksForGoal(g.id) : []; const todayEvents = dayEvents(new Date()).slice(0, 6); const completion = percentDone(tasks); const alerts = dashboardAlerts(tasks);
-  els.dashboardGoalOverview.innerHTML = g ? `<div class="detail-stack"><div><h3>${esc(g.title)}</h3><p class="support-copy">${esc(g.description || "No additional context captured yet.")}</p></div><div class="inline-metadata"><span class="hero-chip hero-chip-soft">${esc(human(g.domain))}</span><span class="hero-chip hero-chip-soft">Deadline | ${esc(fmt(g.deadline))}</span><span class="hero-chip hero-chip-soft">Deviation | ${Math.round(g.deviation * 100)}%</span></div><div class="progress-bar"><span style="width:${completion}%"></span></div></div>` : empty("No active goals yet.","Open Goal Creation to build the first execution lane.");
-  els.metricActiveGoals.innerHTML = metric("Active goals", state.goals.filter((x) => x.status === "active").length, "Goal lanes currently monitored by the orchestrator.");
-  els.metricTaskVelocity.innerHTML = metric("Task velocity", `${state.tasks.filter((x) => x.status === "done").length}/${state.tasks.length}`, "Completed tasks across the current workspace backlog.");
-  els.todayScheduleBadge.textContent = `${todayEvents.length} blocks`;
-  els.dashboardSchedule.innerHTML = todayEvents.length ? todayEvents.map((e) => `<div class="list-item"><strong>${esc(e.title)}</strong><p class="support-copy">${esc(time(e.start_at))} - ${esc(time(e.end_at))} | ${esc(e.source)}</p></div>`).join("") : empty("No time blocks for today.","Create a goal or add a calendar block.");
-  els.dashboardSuggestions.innerHTML = [dashboardSuggestion(g, tasks), { title: tasks.some((t) => isOver(t)) ? "Address overdue work" : "Protect focus windows", detail: tasks.some((t) => isOver(t)) ? `${tasks.filter((t) => isOver(t)).length} overdue task(s) are compressing future milestones.` : "No overdue work right now. Keep long blocks clear of external meetings." }, { title: "Run a weekly review", detail: "The progress adaptor will re-sequence pending work if deviation crosses the threshold." }].map(card).join("");
-  els.dashboardProgress.innerHTML = progressHtml(tasks);
-  els.dashboardAgents.innerHTML = (state.systemStatus?.agents || []).map((a) => `<div class="list-item"><strong>${esc(a.name)}</strong><p class="support-copy">${esc(a.detail)}</p><div class="inline-metadata"><span class="task-chip active">${esc(a.status)}</span><span class="task-chip">${esc(a.load_label)}</span></div></div>`).join("") || empty("Agent telemetry is empty.","The workspace will populate agent load after data loads.");
-  els.dashboardAlerts.innerHTML = alerts.length ? alerts.map(card).join("") : empty("No alerts right now.","Run a conflict scan or weekly review to generate adaptation signals.");
+function requestPlanRevision() {
+  state.pendingPreview = null;
+  if (state.goalDraft) {
+    state.goalDraft.awaiting = "revision";
+  }
+  addAssistantMessage({
+    text: "Tell me what you want changed. You can adjust the deadline, constraints, priority, or the direction of the plan.",
+  });
+  renderAll();
 }
 
-function renderPlan() {
-  els.planGoalSelect.innerHTML = state.goals.length ? state.goals.map((g) => `<option value="${esc(g.id)}" ${g.id === state.selectedGoalId ? "selected" : ""}>${esc(g.title)}</option>`).join("") : `<option value="">No goals</option>`;
-  const g = goal(); const dag = g ? state.goalDags[g.id] : null; const tasks = g ? tasksForGoal(g.id) : [];
-  els.planGoalSummary.innerHTML = g ? `<div class="detail-stack"><h3>${esc(g.title)}</h3><p class="support-copy">${esc(g.description || "No extra context supplied for this goal.")}</p><div class="inline-metadata"><span class="hero-chip hero-chip-soft">${esc(human(g.domain))}</span><span class="hero-chip hero-chip-soft">Deadline | ${esc(fmt(g.deadline))}</span></div></div>` : empty("No goal selected.","Generate or select a goal to inspect the AI plan view.");
-  els.planMilestones.innerHTML = dag?.nodes?.length ? listHtml(dag.nodes.filter((n) => n.milestone).map((n) => `${n.title} | ${fmt(n.scheduled_start)}`)) : empty("No milestones yet.","Milestones appear after planning.");
-  const counts = {}; tasks.forEach((t) => { const a = agentFor(t); counts[a] = (counts[a] || 0) + 1; });
-  els.planAgentAssignments.innerHTML = Object.keys(counts).length ? Object.entries(counts).map(([a, c]) => `<div class="list-item"><strong>${esc(a)}</strong><p class="support-copy">${c} task(s) | ${esc(agentRole(a))}</p></div>`).join("") : empty("No assignments yet.","Agent workloads appear after planning.");
-  renderGraph(dag, g); renderTaskDetail();
+async function approvePendingPlan() {
+  const draft = state.goalDraft;
+  if (!draft || !state.pendingPreview) return;
+
+  showLoading("Creating your goal", [
+    "Saving tasks and schedule.",
+    "Syncing calendar, tasks, notes, and workspace context.",
+  ]);
+
+  try {
+    const created = await fetchJson("/api/v1/goals", {
+      method: "POST",
+      body: JSON.stringify(buildGoalPayload(draft)),
+    });
+    state.pendingPreview = null;
+    state.goalDraft = null;
+    state.selectedGoalId = created.goal.id;
+    await loadWorkspace();
+    addAssistantMessage({
+      title: "Goal activated",
+      text: `I created "${created.goal.title}" and synced the execution lane automatically. Tasks, schedule blocks, notes memory, and workspace context are now updated.`,
+      cards: [
+        { title: "Tasks created", detail: `${created.tasks.length} task nodes are now live.` },
+        { title: "Schedule synced", detail: `${created.calendar_events.length} calendar block(s) were created.` },
+        { title: "Next action", detail: created.tasks[0] ? created.tasks[0].title : "No immediate task found." },
+      ],
+      actions: [
+        { action: "send-prompt", prompt: "What should I do next?", label: "What should I do next?", variant: "primary" },
+        { action: "send-prompt", prompt: "What’s due today?", label: "What’s due today?", variant: "secondary" },
+      ],
+    });
+    setStatus("Goal created and synced");
+  } catch (error) {
+    addAssistantMessage({
+      text: `I couldn’t create the goal: ${readError(error)}`,
+    });
+    setStatus(readError(error));
+  } finally {
+    hideLoading();
+    renderAll();
+  }
 }
 
-function renderGraph(dag, g) {
-  if (!g || !dag?.nodes?.length) { els.graphNodes.innerHTML = empty("No graph to display.","Generate and approve a plan from Goal Creation."); els.graphEdges.innerHTML = ""; return; }
-  const byId = Object.fromEntries(dag.nodes.map((n) => [n.task_id || n.key, n])); const levels = {}; const getLevel = (n) => levels[n.task_id || n.key] ?? (levels[n.task_id || n.key] = !n.depends_on?.length ? 1 : 1 + Math.max(...n.depends_on.map((d) => byId[d] ? getLevel(byId[d]) : 1)));
-  dag.nodes.forEach(getLevel);
-  const groups = {}; dag.nodes.forEach((n) => { const l = levels[n.task_id || n.key]; (groups[l] ||= []).push(n); });
-  const rows = Object.keys(groups).map(Number).sort((a, b) => a - b); const width = Math.max(620, Math.max(...rows.map((r) => groups[r].length), 1) * 204 + 80); const height = Math.max(760, 240 + rows.length * 150); const root = { x: width / 2 - 110, y: 36, width: 220, height: 92 }; const pos = {};
-  els.graphNodes.style.minWidth = `${width}px`; els.graphNodes.style.minHeight = `${height}px`; els.graphEdges.setAttribute("viewBox", `0 0 ${width} ${height}`);
-  const nodes = [`<div class="graph-node root-node" style="left:${root.x}px;top:${root.y}px;"><h4>${esc(g.title)}</h4><p>${esc(human(g.domain))} goal lane</p><div class="node-meta"><span class="task-chip active">${dag.nodes.length} nodes</span><span class="task-chip">${dag.milestones.length} milestones</span></div></div>`];
-  rows.forEach((r) => { const row = groups[r]; const rowWidth = row.length * 180 + Math.max(0, row.length - 1) * 24; const startX = Math.max(40, (width - rowWidth) / 2); const y = 180 + (r - 1) * 150; row.forEach((n, i) => { const id = n.task_id || n.key; const x = startX + i * 204; pos[id] = { x, y, width: 180, height: 88 }; const t = taskById(id); nodes.push(`<button class="graph-node ${id === state.selectedTaskId ? "is-selected" : ""}" data-action="select-task" data-task-id="${esc(id)}" type="button" style="left:${x}px;top:${y}px;border-color:${agentColor(agentFor(t || n))}55;"><h4>${esc(n.title)}</h4><p>${Math.max(1, Math.round((n.estimated_minutes || 60) / 60))} hr | ${esc(agentFor(t || n))}</p><div class="node-meta"><span class="task-chip ${esc(t?.status || "pending")}">${esc(human(t?.status || "pending"))}</span><span class="task-chip">${esc(n.phase)}</span></div></button>`); }); });
-  els.graphNodes.innerHTML = nodes.join("");
-  els.graphEdges.innerHTML = dag.nodes.filter((n) => !n.depends_on?.length).map((n) => path(root.x + root.width / 2, root.y + root.height, pos[n.task_id || n.key].x + 90, pos[n.task_id || n.key].y, "#6D5EFC")).concat(dag.edges.map((e) => pos[e.from_node] && pos[e.to_node] ? path(pos[e.from_node].x + 90, pos[e.from_node].y + pos[e.from_node].height, pos[e.to_node].x + 90, pos[e.to_node].y, "#26324A") : "")).join("");
+function buildGoalPayload(draft) {
+  return {
+    user_id: state.userId,
+    goal: draft.goal,
+    description: draft.description,
+    deadline: draft.deadline ? draft.deadline.toISOString() : null,
+    priority: draft.priority,
+    constraints: draft.constraints || [],
+  };
 }
 
-function renderTaskDetail() {
-  const t = taskById(state.selectedTaskId); if (!t) return (els.taskDetailPanel.innerHTML = empty("No task selected.","Pick a node from the graph to inspect task details."));
-  const deps = t.depends_on.map((id) => taskById(id)?.title).filter(Boolean).join(", ");
-  els.taskDetailPanel.innerHTML = `<div class="detail-stack"><div><h3>${esc(t.title)}</h3><p class="support-copy">${esc(t.description || "No task description available.")}</p></div><div class="inline-metadata"><span class="task-chip ${esc(t.status)}">${esc(human(t.status))}</span><span class="task-chip">${esc(agentFor(t))}</span><span class="task-chip">${Math.max(1, Math.round(t.estimated_minutes / 60))} hr</span></div><div class="list-item"><strong>Scheduled window</strong><p class="support-copy">${esc(fmt(t.scheduled_start))} -> ${esc(fmt(t.scheduled_end))}</p></div><div class="list-item"><strong>Dependencies</strong><p class="support-copy">${esc(deps || "This node can start immediately.")}</p></div><div class="button-row"><button class="button button-primary" data-action="mark-task-done" data-task-id="${esc(t.id)}" type="button">Mark Completed</button><button class="button button-secondary" data-action="open-calendar" type="button">Open Schedule</button></div></div>`;
+function applyRevisionToDraft(text, draft) {
+  const deadline = parseDeadlineInput(text);
+  if (deadline) draft.deadline = deadline;
+
+  const priority = parsePriority(text);
+  if (priority) draft.priority = priority;
+
+  const constraints = extractConstraintHints(text);
+  if (constraints.length) {
+    draft.constraints = constraints;
+    draft.constraintsConfirmed = true;
+  }
+
+  draft.description = [draft.description, `Revision request: ${text.trim()}`]
+    .filter(Boolean)
+    .join(" ");
 }
 
-function renderCalendar() {
-  const selected = state.scheduleDate || new Date(); els.scheduleDateInput.value = toDateInput(selected);
-  renderMiniCalendar(selected); renderDeadlines(); renderConnections(); renderPlanner(selected); renderCalendarSignals();
+async function maybeHandleOperationalIntent(text) {
+  if (isConflictIntent(text)) {
+    await runConflictScanInChat();
+    return true;
+  }
+
+  if (isWeeklyReviewIntent(text)) {
+    await runWeeklyReviewInChat();
+    return true;
+  }
+
+  if (isTaskUpdateIntent(text)) {
+    await updateTaskFromChat(text);
+    return true;
+  }
+
+  if (isNoteCaptureIntent(text)) {
+    await saveNoteFromChat(text);
+    return true;
+  }
+
+  if (isNextActionQuery(text)) {
+    answerNextAction();
+    return true;
+  }
+
+  if (isScheduleQuery(text)) {
+    answerSchedule(text);
+    return true;
+  }
+
+  if (isProgressQuery(text)) {
+    answerProgress();
+    return true;
+  }
+
+  if (isTaskQuery(text)) {
+    answerTasks();
+    return true;
+  }
+
+  if (isGoalQuery(text)) {
+    answerGoals();
+    return true;
+  }
+
+  if (isNoteQuery(text)) {
+    answerNotes();
+    return true;
+  }
+
+  if (isSystemQuery(text)) {
+    answerSystem();
+    return true;
+  }
+
+  return false;
 }
 
-function renderMiniCalendar(selected) { const year = selected.getFullYear(); const month = selected.getMonth(); const first = new Date(year, month, 1); const start = new Date(first); start.setDate(1 - first.getDay()); const cells = Array.from({ length: 35 }, (_, i) => { const d = new Date(start); d.setDate(start.getDate() + i); return `<button class="mini-calendar-cell ${same(d, selected) ? "is-active" : ""}" data-action="select-date" data-date="${toDateInput(d)}" type="button">${d.getDate()}</button>`; }); els.miniCalendar.innerHTML = `<div class="detail-stack"><div class="metric-strip"><span>${selected.toLocaleString(undefined, { month: "long" })}</span><strong>${year}</strong></div><div class="mini-calendar-grid">${cells.join("")}</div></div>`; }
-function renderDeadlines() { const deadlines = [...state.tasks].filter((t) => t.scheduled_end).sort((a, b) => new Date(a.scheduled_end) - new Date(b.scheduled_end)).slice(0, 5); els.deadlineList.innerHTML = deadlines.length ? deadlines.map((t) => `<div class="deadline-item"><strong>${esc(t.title)}</strong><p class="support-copy">${esc(fmt(t.scheduled_end))}</p></div>`).join("") : empty("No deadlines yet.","Scheduled tasks will surface upcoming deadlines here."); }
-function renderConnections() { const items = state.systemStatus?.connections || []; els.connectedToolsList.innerHTML = items.length ? items.map((c) => `<div class="connection-card"><strong>${esc(c.name)}</strong><p class="support-copy">${esc(c.detail)}</p><div class="inline-metadata"><span class="task-chip ${esc(c.status)}">${esc(c.status)}</span><span class="task-chip">${esc(c.kind)}</span></div></div>`).join("") : empty("No tools connected.","System status will populate connected adapters here."); }
-function renderPlanner(selected) { const rows = Array.from({ length: 15 }, (_, i) => `<div class="planner-row"><div class="planner-time">${hour(8 + i)}</div><div class="planner-slot"></div></div>`).join(""); const blocks = dayEvents(selected).map((e) => { const s = new Date(e.start_at), en = new Date(e.end_at); const top = ((s.getHours() + s.getMinutes() / 60) - 8) * 56; const h = Math.max(44, ((en - s) / 3600000) * 56); return `<div class="event-block ${esc(e.source)}" style="top:${top}px;height:${h}px;"><strong>${esc(e.title)}</strong><p>${esc(time(e.start_at))} - ${esc(time(e.end_at))}</p></div>`; }).join(""); els.plannerGrid.innerHTML = `<div class="planner-rows">${rows}</div><div class="planner-events">${blocks}</div>`; }
-function renderCalendarSignals() { els.calendarConflicts.innerHTML = state.latestConflictScan.length ? state.latestConflictScan.map((a) => `<div class="list-item"><strong>${esc(a.task_title)}</strong><p class="support-copy">${esc(a.colliding_title)} overlaps ${esc(fmt(a.original_start))}.</p></div>`).join("") : empty("No conflict warnings.","Run the conflict detector to inspect the next 72-hour window."); const recs = []; const overdue = state.tasks.filter((t) => isOver(t)); if (overdue.length) recs.push({ title: "Recover overdue work", detail: `Reserve the next free slot for "${overdue[0].title}".` }); const replanned = state.latestWeeklyReviews.find((x) => x.replanned); if (replanned) recs.push({ title: "Review revised plan", detail: replanned.summary }); if (!recs.length) recs.push({ title: "Protect focus blocks", detail: "Long execution tasks perform best when external meetings stay outside core blocks." }); els.calendarRecommendations.innerHTML = recs.map(card).join(""); const windows = openWindows(selectedDay()).slice(0, 4).map((w) => ({ title: `${time(w.start)} - ${time(w.end)}`, detail: `${Math.round((w.end - w.start) / 60000)} minute window available for recovery or focus work.` })); els.freeSlotsList.innerHTML = windows.length ? windows.map(card).join("") : empty("No free slots found.","Create or move events to open recovery windows."); }
+function answerNextAction() {
+  const goal = selectedGoal() || state.goals[0];
+  const nextTask = (goal ? tasksForGoal(goal.id) : state.tasks).find((task) => task.status !== "done");
 
-function renderBoard() {
-  const filter = els.taskBoardFilter.value || "all"; const q = (els.taskBoardSearch.value || "").trim().toLowerCase();
-  const filtered = state.tasks.filter((t) => (filter === "all" ? true : t.status === filter) && (!q || [t.title, t.description, t.phase].join(" ").toLowerCase().includes(q)));
-  const buckets = { backlog: [], today: [], progress: [], completed: [] };
-  filtered.forEach((t) => { if (t.status === "done") return buckets.completed.push(t); if (t.status === "active") return buckets.progress.push(t); return t.scheduled_start && same(new Date(t.scheduled_start), new Date()) ? buckets.today.push(t) : buckets.backlog.push(t); });
-  [["backlogColumn","backlogCount","backlog"],["todayColumn","todayCount","today"],["inProgressColumn","progressCount","progress"],["completedColumn","completedCount","completed"]].forEach(([col, count, key]) => { els[col].innerHTML = buckets[key].length ? buckets[key].map(taskCard).join("") : empty("No tasks in this lane.",""); els[count].textContent = String(buckets[key].length); });
+  if (!goal || !nextTask) {
+    addAssistantMessage({
+      text: "There isn’t an active next task right now. You can create a new goal or ask me to review your current workspace.",
+    });
+    renderAll();
+    return;
+  }
+
+  addAssistantMessage({
+    title: "Next best move",
+    text: `The next task for "${goal.title}" is "${nextTask.title}". It is the best next move because it sits earliest in the current execution lane that is not yet complete.`,
+    cards: [
+      { title: "Scheduled window", detail: formatTimeRange(nextTask.scheduled_start, nextTask.scheduled_end) },
+      { title: "Phase", detail: human(nextTask.phase) },
+      { title: "Status", detail: human(nextTask.status) },
+    ],
+    actions: [
+      { action: "send-prompt", prompt: `Mark ${nextTask.title} as done.`, label: "Mark as done", variant: "secondary" },
+      { action: "send-prompt", prompt: "What's due today?", label: "Show today's schedule", variant: "secondary" },
+    ],
+  });
+  renderAll();
 }
 
-function renderReplan() {
-  const overdue = state.tasks.filter((t) => isOver(t)); const replanned = state.latestWeeklyReviews.filter((x) => x.replanned).length; const slots = openWindows(selectedDay()).length;
-  els.replanInsightCard.innerHTML = `<div class="detail-stack"><h3>You missed ${overdue.length} task(s)</h3><p class="support-copy">The scheduler found ${slots} free slot(s) in the selected day window and the execution lane is watching for drift.</p><div class="inline-metadata"><span class="hero-chip hero-chip-soft">${replanned} revised plan(s)</span><span class="hero-chip hero-chip-soft">${overdue.length} overdue</span></div></div>`;
-  els.missedTaskTimeline.innerHTML = overdue.length ? overdue.map((t) => `<div class="timeline-item"><strong>${esc(t.title)}</strong><p class="support-copy">Missed ${esc(fmt(t.scheduled_end))}</p><div class="inline-metadata"><span class="task-chip pending">${esc(t.phase)}</span><span class="task-chip">${esc(agentFor(t))}</span></div></div>`).join("") : empty("No missed tasks.","The execution timeline is stable right now.");
-  const reasons = [...new Set(overdue.map((t) => /planning/i.test(t.phase) ? "Planning backlog" : /(tracking|delivery)/i.test(t.phase) ? "Review cadence drift" : "Execution compression"))];
-  els.reasonTags.innerHTML = reasons.length ? `<div class="reason-tags">${reasons.map((r) => `<span class="task-chip blocked">${esc(r)}</span>`).join("")}</div>` : empty("No reason tags yet.","Overdue work or missed dependencies will surface tags here.");
-  els.replanSummary.innerHTML = state.latestWeeklyReviews.length ? state.latestWeeklyReviews.map((r) => `<div class="list-item"><strong>${esc(goalTitle(r.goal_id))}</strong><p class="support-copy">${esc(r.summary)}</p><div class="inline-metadata"><span class="task-chip ${r.replanned ? "active" : "done"}">${r.replanned ? "Replanned" : "Stable"}</span><span class="task-chip">${Math.round(r.deviation_pct * 100)}% deviation</span></div></div>`).join("") : empty("No replan data yet.","Run the weekly review to generate an adaptive recommendation.");
-  els.replanChanges.innerHTML = state.latestWeeklyReviews.length ? state.latestWeeklyReviews.map((r) => `<div class="list-item"><strong>${r.updated_task_ids.length} task(s) updated</strong><p class="support-copy">${r.updated_task_ids.length ? "The plan has fresh schedule windows applied." : "No schedule changes were required."}</p></div>`).join("") : "";
+function answerSchedule(text) {
+  const targetDate = resolveQueryDate(text);
+  const events = eventsForDay(targetDate).slice(0, 8);
+
+  if (!events.length) {
+    addAssistantMessage({
+      text: `There are no scheduled blocks on ${targetDate.toLocaleDateString(undefined, { weekday: "long", month: "short", day: "numeric" })}.`,
+    });
+    renderAll();
+    return;
+  }
+
+  addAssistantMessage({
+    title: `Schedule for ${targetDate.toLocaleDateString(undefined, { weekday: "long", month: "short", day: "numeric" })}`,
+    text: "Here are the current calendar commitments and execution blocks.",
+    cards: events.map((event) => ({
+      title: event.title,
+      detail: `${formatTimeRange(event.start_at, event.end_at)} | ${human(event.source)}`,
+    })),
+  });
+  renderAll();
 }
 
-function renderNotes() {
-  els.noteFolders.innerHTML = state.notes.length ? state.notes.map((n) => `<div class="folder-item ${n.id === state.selectedNoteId ? "is-active" : ""}" data-action="select-note" data-note-id="${esc(n.id)}"><strong>${esc(human(n.note_type))}</strong><p class="support-copy">${esc(n.title)}</p></div>`).join("") : empty("No notes yet.","Context packages and status reports appear after goal switches or weekly reviews.");
-  const n = noteById(state.selectedNoteId); if (n) state.draftNoteTitle = n.title;
-  els.selectedNoteTitle.textContent = n?.title || state.draftNoteTitle || "Memory workspace";
-  els.selectedNoteType.textContent = human(n?.note_type || "manual");
-  els.noteEditor.value = state.draftNote || n?.content || "";
-  const relatedGoal = n?.goal_id ? state.goals.find((g) => g.id === n.goal_id) : null; const relatedTasks = n?.goal_id ? tasksForGoal(n.goal_id).slice(0,3) : []; const relatedEvents = n?.goal_id ? state.events.filter((e) => e.goal_id === n.goal_id).slice(0,3) : [];
-  const linked = []; if (relatedGoal) linked.push({ title: "Linked goal", detail: relatedGoal.title }); if (relatedTasks.length) linked.push({ title: "Linked tasks", detail: relatedTasks.map((t) => t.title).join(", ") }); if (relatedEvents.length) linked.push({ title: "Meetings and blocks", detail: relatedEvents.map((e) => e.title).join(", ") });
-  els.linkedContext.innerHTML = linked.length ? linked.map(card).join("") : empty("No linked context yet.","Select a note to inspect related goals, tasks, and time blocks.");
+function answerProgress() {
+  const goal = selectedGoal();
+  const tasks = goal ? tasksForGoal(goal.id) : state.tasks;
+  if (!tasks.length) {
+    addAssistantMessage({
+      text: "There are no task lanes to review yet. Create a goal and I’ll start tracking progress automatically.",
+    });
+    renderAll();
+    return;
+  }
+
+  const done = tasks.filter((task) => task.status === "done").length;
+  const active = tasks.filter((task) => task.status === "active").length;
+  const blocked = tasks.filter((task) => task.status === "blocked").length;
+  const pending = tasks.filter((task) => task.status === "pending").length;
+  const completion = Math.round((done / tasks.length) * 100);
+
+  addAssistantMessage({
+    title: goal ? `Progress for ${goal.title}` : "Workspace progress",
+    text: `Current completion is ${completion}% across ${tasks.length} tracked task(s).`,
+    cards: [
+      { title: "Completed", detail: `${done} task(s)` },
+      { title: "In progress", detail: `${active} task(s)` },
+      { title: "Pending", detail: `${pending} task(s)` },
+      { title: "Blocked", detail: `${blocked} task(s)` },
+    ],
+    actions: [
+      { action: "send-prompt", prompt: "Run weekly review.", label: "Run weekly review", variant: "secondary" },
+    ],
+  });
+  renderAll();
 }
 
-function renderSystem() {
-  const s = state.systemStatus; if (!s) return;
-  els.systemAgents.innerHTML = s.agents.map((a) => `<div class="agent-health-card"><strong>${esc(a.name)}</strong><p class="support-copy">${esc(a.detail)}</p><div class="inline-metadata"><span class="task-chip active">${esc(a.status)}</span><span class="task-chip">${esc(a.load_label)}</span></div></div>`).join("");
-  els.systemConnections.innerHTML = s.connections.map((c) => `<div class="connection-card"><strong>${esc(c.name)}</strong><p class="support-copy">${esc(c.detail)}</p><div class="inline-metadata"><span class="task-chip ${esc(c.status)}">${esc(c.status)}</span><span class="task-chip">${esc(c.kind)}</span></div></div>`).join("");
-  els.systemDatabase.innerHTML = `<div class="detail-stack"><div class="metric-strip"><span>${esc(s.database)}</span><strong>${esc(s.status)}</strong></div><p class="support-copy">Environment: ${esc(s.environment)} | DB Mode: ${esc(s.runtime_mode)}</p><div class="inline-metadata"><span class="task-chip active">${esc(human(s.integration_backend))}</span><span class="task-chip">${esc(human(s.orchestration_runtime))}</span><span class="task-chip">${esc(s.auth_mode)}</span></div><p class="support-copy">Rate limit: ${esc(s.rate_limit)}</p>${s.metrics.map((m) => `<div class="metric-strip"><span>${esc(m.label)}</span><strong>${m.value}</strong></div>`).join("")}</div>`;
-  els.systemWorkflowLogs.innerHTML = s.workflows.map((w) => `<div class="workflow-log"><strong>${esc(w.title)}</strong><p class="support-copy">${esc(w.detail)}</p><div class="inline-metadata"><span class="task-chip">${esc(human(w.status))}</span><span class="task-chip">${esc(w.timestamp ? fmt(w.timestamp) : "No timestamp")}</span></div></div>`).join("");
-  els.systemRequestHistory.innerHTML = state.requestHistory.length ? state.requestHistory.slice(0,8).map((r) => `<div class="workflow-log"><strong>${esc(r.method)} ${esc(r.url)}</strong><p class="support-copy">Status ${r.status} | ${r.duration} ms | ${esc(fmt(r.at))}</p></div>`).join("") : empty("No frontend requests yet.","Request history is populated after the workspace starts loading data.");
-  els.systemHeartbeat.innerHTML = `<div class="detail-stack"><div class="metric-strip"><span>Application</span><strong>${esc(s.app)}</strong></div><p class="support-copy">Last update: ${esc(fmt(s.last_updated))}</p><div class="inline-metadata"><span class="task-chip active">${esc(human(s.integration_backend))}</span><span class="task-chip">${esc(human(s.orchestration_runtime))}</span></div>${s.readiness.map((r) => `<div class="list-item"><strong>${esc(r.name)}</strong><p class="support-copy">${esc(r.detail)}</p><div class="inline-metadata"><span class="task-chip ${r.status === "ready" ? "done" : "pending"}">${esc(human(r.status))}</span></div></div>`).join("")}</div>`;
+function answerTasks() {
+  const goal = selectedGoal();
+  const tasks = (goal ? tasksForGoal(goal.id) : state.tasks).slice(0, 6);
+
+  if (!tasks.length) {
+    addAssistantMessage({
+      text: "No tasks are available yet.",
+    });
+    renderAll();
+    return;
+  }
+
+  addAssistantMessage({
+    title: goal ? `Tasks for ${goal.title}` : "Current tasks",
+    text: "Here are the most relevant tasks in the current lane.",
+    cards: tasks.map((task) => ({
+      title: task.title,
+      detail: `${human(task.status)} | ${formatDate(task.scheduled_start)}`,
+    })),
+  });
+  renderAll();
 }
 
-async function runConflictScan() { showLoading("Conflict sentinel", ["Scanning the next 72 hours.", "Evaluating alternative windows and free slots."]); try { state.latestConflictScan = await fetchJson("/api/v1/webhooks/cron/conflict-check", { method: "POST", body: JSON.stringify({ user_id: currentUser(), auto_resolve: false }) }); renderDashboard(); renderCalendarSignals(); showStatus(state.latestConflictScan.length ? `Detected ${state.latestConflictScan.length} conflict(s).` : "No conflicts found in the next 72 hours.", state.latestConflictScan.length ? "warning" : "success"); } catch (error) { showStatus(readError(error), "danger"); } finally { hideLoading(); } }
-async function runWeeklyReview() { showLoading("Progress adaptor", ["Reviewing due tasks and deviation percentages.", "Testing whether the plan needs a new sequence."]); try { state.latestWeeklyReviews = await fetchJson("/api/v1/webhooks/cron/weekly-review", { method: "POST", body: JSON.stringify({ user_id: currentUser() }) }); await loadWorkspace(); const replanned = state.latestWeeklyReviews.filter((x) => x.replanned); if (replanned.length) { els.adaptiveModalContent.innerHTML = replanned.map((r) => `<div class="list-item"><strong>${esc(goalTitle(r.goal_id))}</strong><p class="support-copy">${esc(r.summary)}</p></div>`).join(""); els.adaptiveModal.classList.remove("is-hidden"); showStatus("Weekly review generated a revised execution lane.", "warning"); } else showStatus("Weekly review completed. The current plan remains stable.", "success"); } catch (error) { showStatus(readError(error), "danger"); } finally { hideLoading(); } }
-function hideAdaptive() { els.adaptiveModal.classList.add("is-hidden"); }
-function runSearch() { const q = (els.globalSearchInput.value || "").trim(); els.sidebarSearch.value = q; if (searchTimer) clearTimeout(searchTimer); if (q.length < 2) { els.searchResults.classList.add("is-hidden"); els.searchResults.innerHTML = ""; return; } searchTimer = setTimeout(async () => { try { const results = await fetchJson(`/api/v1/tasks/search?q=${encodeURIComponent(q)}&user_id=${encodeURIComponent(currentUser())}`); els.searchResults.innerHTML = results.length ? results.map((t) => `<button class="search-result-card" data-action="select-search-task" data-task-id="${esc(t.id)}" type="button"><strong>${esc(t.title)}</strong><p class="support-copy">${esc(t.phase)} | ${esc(fmt(t.scheduled_start))}</p></button>`).join("") : empty("No task matches.","Try a broader search query."); els.searchResults.classList.remove("is-hidden"); } catch (error) { showStatus(readError(error), "danger"); } }, 220); }
+function answerGoals() {
+  if (!state.goals.length) {
+    addAssistantMessage({
+      text: "There are no goals in the workspace yet. Tell me what you want to achieve and I’ll plan it with you in chat.",
+    });
+    renderAll();
+    return;
+  }
 
-async function handleActionClick(event) {
+  addAssistantMessage({
+    title: "Active goals",
+    text: "These are the current goal lanes in your workspace.",
+    cards: state.goals.map((goal) => ({
+      title: goal.title,
+      detail: `${human(goal.domain)} | ${tasksForGoal(goal.id).filter((task) => task.status === "done").length}/${tasksForGoal(goal.id).length || 0} done`,
+    })),
+  });
+  renderAll();
+}
+
+function answerNotes() {
+  const notes = relatedNotes().slice(0, 5);
+  if (!notes.length) {
+    addAssistantMessage({
+      text: "There are no recent notes in memory yet. You can say “remember that ...” and I’ll save it into the current workspace.",
+    });
+    renderAll();
+    return;
+  }
+
+  addAssistantMessage({
+    title: "Recent notes",
+    text: "Here are the latest notes and memory items I can see.",
+    cards: notes.map((note) => ({
+      title: note.title,
+      detail: truncate(note.content, 120),
+    })),
+  });
+  renderAll();
+}
+
+function answerSystem() {
+  const system = state.systemStatus;
+  if (!system) {
+    addAssistantMessage({ text: "System status is not loaded yet." });
+    renderAll();
+    return;
+  }
+
+  addAssistantMessage({
+    title: "System and sync status",
+    text: `${system.app} is running in ${system.environment} with ${human(system.integration_backend)} integrations and ${human(system.orchestration_runtime)} orchestration.`,
+    cards: system.connections.slice(0, 5).map((connection) => ({
+      title: connection.name,
+      detail: `${human(connection.status)} | ${connection.detail}`,
+    })),
+  });
+  renderAll();
+}
+
+async function runConflictScanInChat() {
+  showLoading("Running conflict scan", [
+    "Inspecting the next 72 hours for collisions.",
+    "Checking free slots and pressure points.",
+  ]);
+
+  try {
+    state.latestConflictScan = await fetchJson("/api/v1/webhooks/cron/conflict-check", {
+      method: "POST",
+      body: JSON.stringify({ user_id: state.userId, auto_resolve: false }),
+    });
+    await loadWorkspace();
+    addAssistantMessage({
+      title: "Conflict scan complete",
+      text: state.latestConflictScan.length
+        ? `I found ${state.latestConflictScan.length} conflict(s) that could compress your plan.`
+        : "No near-term conflicts were detected.",
+      cards: state.latestConflictScan.slice(0, 5).map((alert) => ({
+        title: alert.task_title,
+        detail: `${alert.colliding_title} overlaps with ${formatTimeRange(alert.original_start, alert.original_end)}`,
+      })),
+    });
+    setStatus("Conflict scan complete");
+  } catch (error) {
+    addAssistantMessage({ text: `I couldn’t run the conflict scan: ${readError(error)}` });
+    setStatus(readError(error));
+  } finally {
+    hideLoading();
+    renderAll();
+  }
+}
+
+async function runWeeklyReviewInChat() {
+  showLoading("Running weekly review", [
+    "Reviewing progress deviation and due work.",
+    "Checking whether a re-plan is needed.",
+  ]);
+
+  try {
+    state.latestWeeklyReviews = await fetchJson("/api/v1/webhooks/cron/weekly-review", {
+      method: "POST",
+      body: JSON.stringify({ user_id: state.userId }),
+    });
+    await loadWorkspace();
+
+    const replanned = state.latestWeeklyReviews.filter((item) => item.replanned);
+    addAssistantMessage({
+      title: "Weekly review complete",
+      text: replanned.length
+        ? `I revised ${replanned.length} goal lane(s) based on missed work or deviation.`
+        : "The current plans remain stable. No re-sequencing was required.",
+      cards: state.latestWeeklyReviews.map((item) => ({
+        title: goalTitle(item.goal_id),
+        detail: `${Math.round(item.deviation_pct * 100)}% deviation | ${item.summary}`,
+      })),
+    });
+    setStatus("Weekly review complete");
+  } catch (error) {
+    addAssistantMessage({ text: `I couldn’t run the weekly review: ${readError(error)}` });
+    setStatus(readError(error));
+  } finally {
+    hideLoading();
+    renderAll();
+  }
+}
+
+async function updateTaskFromChat(text) {
+  const target = findTaskFromText(text);
+  if (!target) {
+    addAssistantMessage({
+      text: "I couldn’t confidently match that task. Ask me “What should I do next?” first, or mention more of the task title.",
+    });
+    renderAll();
+    return;
+  }
+
+  const desiredStatus = parseTaskStatus(text) || "done";
+  try {
+    await fetchJson(`/api/v1/tasks/${target.id}`, {
+      method: "PATCH",
+      body: JSON.stringify({ status: desiredStatus }),
+    });
+    await loadWorkspace();
+    addAssistantMessage({
+      text: `Updated "${target.title}" to ${human(desiredStatus)}.`,
+    });
+    renderAll();
+  } catch (error) {
+    addAssistantMessage({ text: `I couldn’t update the task: ${readError(error)}` });
+    renderAll();
+  }
+}
+
+async function saveNoteFromChat(text) {
+  const content = extractNoteText(text);
+  if (!content) {
+    addAssistantMessage({
+      text: "Tell me what you want me to remember, for example: “Remember that I should avoid interviews on Fridays.”",
+    });
+    renderAll();
+    return;
+  }
+
+  try {
+    await fetchJson("/api/v1/notes", {
+      method: "POST",
+      body: JSON.stringify({
+        user_id: state.userId,
+        title: noteTitleFromContent(content),
+        content,
+        goal_id: state.selectedGoalId,
+        note_type: "manual",
+      }),
+    });
+    await loadWorkspace();
+    addAssistantMessage({
+      text: "Saved that into Telova memory and linked it to the current workspace.",
+    });
+    renderAll();
+  } catch (error) {
+    addAssistantMessage({ text: `I couldn’t save the note: ${readError(error)}` });
+    renderAll();
+  }
+}
+
+async function refreshWorkspaceInChat() {
+  showLoading("Refreshing workspace", [
+    "Pulling the latest goals, tasks, notes, and schedule.",
+    "Updating chat context and sync status.",
+  ]);
+  try {
+    await loadWorkspace();
+    addAssistantMessage({
+      text: "Workspace refreshed. I’m using the latest goals, tasks, notes, and calendar data now.",
+    });
+    setStatus("Workspace refreshed");
+  } catch (error) {
+    addAssistantMessage({ text: `I couldn’t refresh the workspace: ${readError(error)}` });
+    setStatus(readError(error));
+  } finally {
+    hideLoading();
+    renderAll();
+  }
+}
+
+function addAssistantMessage(payload) {
+  state.chatMessages.push({
+    id: `message-${messageCounter += 1}`,
+    role: "assistant",
+    title: payload.title || "",
+    text: payload.text || "",
+    cards: payload.cards || [],
+    actions: payload.actions || [],
+    plan: payload.plan || null,
+    createdAt: new Date().toISOString(),
+  });
+}
+
+function addUserMessage(text) {
+  state.chatMessages.push({
+    id: `message-${messageCounter += 1}`,
+    role: "user",
+    title: "",
+    text,
+    cards: [],
+    actions: [],
+    plan: null,
+    createdAt: new Date().toISOString(),
+  });
+}
+
+function renderMessage(message) {
+  return `
+    <div class="message-bubble ${message.role}">
+      <div class="avatar ${message.role}">${message.role === "assistant" ? "T" : initials(state.profileName)}</div>
+      <div class="message-shell">
+        ${message.title ? `<div class="message-title">${esc(message.title)}</div>` : ""}
+        ${message.text ? `<div class="message-text">${paragraphs(message.text)}</div>` : ""}
+        ${message.cards?.length ? `<div class="message-grid">${message.cards.map((card) => `
+          <div class="quick-card">
+            <strong>${esc(card.title)}</strong>
+            <p class="list-copy">${esc(card.detail)}</p>
+          </div>
+        `).join("")}</div>` : ""}
+        ${message.plan ? renderPlanPreview(message.plan) : ""}
+        ${message.actions?.length ? `<div class="chat-actions">${message.actions.map((action) => actionChip(action, `chat-action ${action.variant || "secondary"}`)).join("")}</div>` : ""}
+        <div class="message-meta">${formatMessageTime(message.createdAt)}</div>
+      </div>
+    </div>
+  `;
+}
+
+function renderPlanPreview(plan) {
+  const tasks = plan.tasks || [];
+  return `
+    <div class="plan-preview">
+      <h4>Task DAG preview</h4>
+      <p class="card-copy">${esc(plan.summary || "")}</p>
+      <div class="plan-meta">
+        <span class="tag">${esc(human(plan.domain))}</span>
+        <span class="tag">${esc(formatDate(plan.deadline))}</span>
+        <span class="tag">${tasks.length} tasks</span>
+      </div>
+      <div class="plan-list">
+        ${tasks.slice(0, 8).map((task) => `
+          <div class="plan-row">
+            <div>
+              <strong>${esc(task.title)}</strong>
+              <p class="list-copy">${esc(task.description)}</p>
+              <div class="plan-meta">
+                <span class="tag">${esc(human(task.phase))}</span>
+                <span class="tag">${task.estimated_minutes} min</span>
+                ${task.milestone ? `<span class="tag success">Milestone</span>` : ""}
+              </div>
+            </div>
+            <div class="list-copy">${esc(formatTimeRange(task.scheduled_start, task.scheduled_end))}</div>
+          </div>
+        `).join("")}
+      </div>
+    </div>
+  `;
+}
+
+function handleDocumentClick(event) {
   const target = event.target.closest("[data-action]");
-  if (!target) { if (!event.target.closest("#searchResults") && !event.target.closest("#globalSearchInput")) els.searchResults.classList.add("is-hidden"); return; }
+  if (!target) return;
+
   const action = target.dataset.action;
-  if (action === "mark-task-done") return finishTask(target.dataset.taskId);
-  if (action === "select-task") { state.selectedTaskId = target.dataset.taskId; return renderPlan(); }
-  if (action === "select-note") { state.selectedNoteId = target.dataset.noteId; state.draftNote = ""; return renderNotes(); }
-  if (action === "select-date") { state.scheduleDate = parseDate(target.dataset.date) || new Date(); return renderCalendar(); }
-  if (action === "select-search-task") { state.selectedTaskId = target.dataset.taskId; const t = taskById(state.selectedTaskId); state.selectedGoalId = t?.goal_id || state.selectedGoalId; await ensureGoalDag(state.selectedGoalId); els.searchResults.classList.add("is-hidden"); switchView("agents"); return renderAll(); }
-  if (action === "open-calendar") switchView("calendar");
+  if (action === "send-prompt") {
+    const prompt = target.dataset.prompt || "";
+    els.chatComposer.value = prompt;
+    autoResizeComposer();
+    sendComposerMessage();
+    return;
+  }
+
+  if (action === "select-goal") {
+    state.selectedGoalId = target.dataset.goalId || null;
+    renderAll();
+    return;
+  }
+
+  if (action === "approve-plan") {
+    approvePendingPlan();
+    return;
+  }
+
+  if (action === "revise-plan") {
+    requestPlanRevision();
+    return;
+  }
+
+  if (action === "choose-priority" && state.goalDraft) {
+    state.goalDraft.priority = target.dataset.value;
+    askNextGoalQuestionOrPreview();
+    return;
+  }
+
+  if (action === "run-conflict-scan") {
+    runConflictScanInChat();
+    return;
+  }
+
+  if (action === "run-weekly-review") {
+    runWeeklyReviewInChat();
+  }
 }
 
-async function finishTask(taskId) { try { await fetchJson(`/api/v1/tasks/${taskId}`, { method: "PATCH", body: JSON.stringify({ status: "done" }) }); await loadWorkspace(); showStatus("Task marked as completed.", "success"); } catch (error) { showStatus(readError(error), "danger"); } }
-function newNote() { state.selectedNoteId = null; state.draftNote = ""; state.draftNoteTitle = window.prompt("Note title", state.draftNoteTitle || "Operational brief") || "Operational brief"; renderNotes(); els.noteEditor.focus(); }
-async function saveNote() { const content = (els.noteEditor.value || "").trim(); if (!content) return showStatus("Add note content before saving.", "warning"); const title = state.draftNoteTitle || noteById(state.selectedNoteId)?.title || "Operational brief"; try { if (state.selectedNoteId) await fetchJson(`/api/v1/notes/${state.selectedNoteId}`, { method: "PATCH", body: JSON.stringify({ title, content }) }); else { const created = await fetchJson("/api/v1/notes", { method: "POST", body: JSON.stringify({ user_id: currentUser(), title, content, goal_id: state.selectedGoalId, note_type: "manual" }) }); state.selectedNoteId = created.id; } state.draftNote = ""; await loadWorkspace(); showStatus("Note saved successfully.", "success"); } catch (error) { showStatus(readError(error), "danger"); } }
-async function createCalendarBlock() { const slot = openWindows(selectedDay())[0]; const title = window.prompt("Block title", taskById(state.selectedTaskId)?.title ? `Focus block: ${taskById(state.selectedTaskId).title}` : "Manual focus block"); if (!title) return; let start = slot?.start || new Date(selectedDay().setHours(9,0,0,0)); let end = new Date(Math.min((slot?.end || new Date(start.getTime() + 3600000)).getTime(), start.getTime() + 3600000)); try { await fetchJson("/api/v1/calendar/events", { method: "POST", body: JSON.stringify({ user_id: currentUser(), title, description: "Created from the Telova command center.", start_at: start.toISOString(), end_at: end.toISOString(), goal_id: state.selectedGoalId, task_id: state.selectedTaskId }) }); await loadWorkspace(); showStatus("Calendar block created.", "success"); } catch (error) { showStatus(readError(error), "danger"); } }
+function handleComposerKeydown(event) {
+  if (event.key === "Enter" && !event.shiftKey) {
+    event.preventDefault();
+    sendComposerMessage();
+  }
+}
 
-async function fetchJson(url, options = {}) { const started = performance.now(); const method = options.method || "GET"; const headers = { "Content-Type": "application/json", ...(options.headers || {}) }; if (state.apiKey) headers["X-Telova-API-Key"] = state.apiKey; try { const res = await fetch(url, { ...options, headers }); const type = res.headers.get("content-type") || ""; const payload = type.includes("application/json") ? await res.json() : await res.text(); track(method, url, res.status, Math.round(performance.now() - started)); if (!res.ok) throw new Error(typeof payload === "string" ? payload : JSON.stringify(payload)); return payload; } catch (error) { track(method, url, "ERR", Math.round(performance.now() - started)); throw error; } }
-function track(method, url, status, duration) { state.requestHistory.unshift({ method, url, status: String(status), duration: String(duration), at: new Date().toISOString() }); state.requestHistory = state.requestHistory.slice(0, 10); }
-function showStatus(message, tone = "info") { els.statusBanner.textContent = message; els.statusBanner.className = `status-chip status-chip-${tone}`; }
-function showLoading(title, messages) { clearLoading(); els.loadingTitle.textContent = title; els.loadingMessage.textContent = messages[0] || ""; els.loadingModal.classList.remove("is-hidden"); if (messages.length > 1) { let i = 0; loadingTimer = setInterval(() => { i = (i + 1) % messages.length; els.loadingMessage.textContent = messages[i]; }, 1000); } }
-function hideLoading() { clearLoading(); els.loadingModal.classList.add("is-hidden"); }
-function clearLoading() { if (loadingTimer) { clearInterval(loadingTimer); loadingTimer = null; } }
+function autoResizeComposer() {
+  els.chatComposer.style.height = "auto";
+  els.chatComposer.style.height = `${Math.min(els.chatComposer.scrollHeight, 220)}px`;
+}
 
-function dashboardSuggestion(g, tasks) { const pending = tasks.filter((t) => t.status === "pending"); return { title: g ? `Advance "${g.title}"` : "Create the first goal", detail: g ? pending[0] ? `The next best move is "${pending[0].title}" because it unlocks the critical path.` : "This goal is fully completed. Spin up a new lane when ready." : "A goal unlocks the graph view, schedule planner, and adaptive review loops." }; }
-function dashboardAlerts(tasks) { const alerts = []; if (state.latestConflictScan.length) alerts.push({ title: `${state.latestConflictScan.length} conflict(s) detected`, detail: "Open Calendar to inspect collisions and suggested free windows." }); const overdue = tasks.filter((t) => isOver(t)); if (overdue.length) alerts.push({ title: `${overdue.length} overdue task(s)`, detail: `The most urgent item is "${overdue[0].title}".` }); if (state.latestWeeklyReviews.some((r) => r.replanned)) alerts.push({ title: "Revised plan available", detail: "Open Replan & Adaptation to review the new execution order." }); return alerts; }
-function progressHtml(tasks) { if (!tasks.length) return empty("No tasks yet.","Generated plans will show execution progress here."); const counts = { pending: tasks.filter((t) => t.status === "pending").length, active: tasks.filter((t) => t.status === "active").length, done: tasks.filter((t) => t.status === "done").length, blocked: tasks.filter((t) => t.status === "blocked").length }; return Object.entries(counts).map(([k, v]) => `<div class="detail-stack"><div class="metric-strip"><span>${esc(human(k))}</span><strong>${v}</strong></div><div class="progress-bar"><span style="width:${Math.round((v / tasks.length) * 100)}%;background:${statusColor(k)}"></span></div></div>`).join(""); }
-function metric(label, value, detail) { return `<div class="metric-strip"><span>${esc(label)}</span><strong>${value}</strong></div><p class="support-copy">${esc(detail)}</p>`; }
-function card(item) { return `<div class="list-item"><strong>${esc(item.title)}</strong><p class="support-copy">${esc(item.detail)}</p></div>`; }
-function taskCard(t) { return `<div class="task-card"><div class="task-card-top"><span class="task-chip ${esc(t.status)}">${esc(human(t.status))}</span><span class="task-chip">${esc(agentFor(t))}</span></div><div><h4>${esc(t.title)}</h4><p>${esc(t.description || "Task generated by the plan graph.")}</p></div><div class="task-card-bottom"><span class="support-copy">${esc(fmt(t.scheduled_start))}</span>${t.status !== "done" ? `<button class="button button-ghost" data-action="mark-task-done" data-task-id="${esc(t.id)}" type="button">Complete</button>` : ""}</div></div>`; }
-function listHtml(items, tone = "info") { return items?.length ? items.map((x) => `<div class="list-item"><span class="status-chip status-chip-${tone}">${tone === "warning" ? "Risk" : "Item"}</span><p class="support-copy">${esc(x)}</p></div>`).join("") : empty("No items yet.",""); }
-function empty(title, detail) { return `<div class="empty-state"><strong>${esc(title)}</strong>${detail ? `<p class="support-copy">${esc(detail)}</p>` : ""}</div>`; }
-function path(x1, y1, x2, y2, stroke) { const cy = (y1 + y2) / 2; return `<path d="M ${x1} ${y1} C ${x1} ${cy}, ${x2} ${cy}, ${x2} ${y2}" stroke="${stroke}" stroke-width="2" fill="none" stroke-linecap="round" />`; }
-function agentFor(t) { const p = String(t?.phase || "").toLowerCase(); return /(plan|track|delivery)/.test(p) ? "Orchestrator" : /(discover|design|research)/.test(p) ? "Research" : /(validation|hardening|calendar)/.test(p) ? "Scheduler" : /(mentorship|review|context|memory)/.test(p) ? "Memory" : "Execution"; }
-function agentRole(name) { return { Orchestrator: "Primary coordinator", Scheduler: "Conflict sentinel", Research: "Goal decomposer", Memory: "Context bridge", Execution: "Progress adaptor" }[name] || "Specialist"; }
-function agentColor(name) { return { Orchestrator: "#8B5CF6", Scheduler: "#06B6D4", Research: "#F97316", Memory: "#22C55E", Execution: "#EC4899" }[name] || "#6D5EFC"; }
-function statusColor(status) { return status === "done" ? "#22C55E" : status === "active" ? "#38BDF8" : status === "blocked" ? "#EF4444" : "#F59E0B"; }
-function dayEvents(d) { return state.events.filter((e) => same(new Date(e.start_at), d)).sort((a, b) => new Date(a.start_at) - new Date(b.start_at)); }
-function openWindows(d) { const events = dayEvents(d).map((e) => ({ start: new Date(e.start_at), end: new Date(e.end_at) })); const dayStart = new Date(d); dayStart.setHours(8,0,0,0); const dayEnd = new Date(d); dayEnd.setHours(22,0,0,0); const slots = []; let cursor = new Date(dayStart); events.forEach((e) => { if (e.start > cursor) slots.push({ start: new Date(cursor), end: new Date(e.start) }); if (e.end > cursor) cursor = new Date(e.end); }); if (cursor < dayEnd) slots.push({ start: cursor, end: dayEnd }); return slots.filter((s) => s.end - s.start >= 30 * 60000); }
-function selectedDay() { return state.scheduleDate || new Date(); }
-function percentDone(tasks) { return tasks.length ? Math.round((tasks.filter((t) => t.status === "done").length / tasks.length) * 100) : 0; }
-function isOver(task) { return task?.scheduled_end && new Date(task.scheduled_end) < new Date() && task.status !== "done"; }
-function prettyName(v) { return String(v || "devaraj").split("@")[0].replace(/[._-]+/g, " ").split(" ").filter(Boolean).map((p) => p[0].toUpperCase() + p.slice(1)).join(" "); }
-function userIdFromEmail(v) { return String(v || "").split("@")[0].trim().toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "") || "demo-user"; }
-function initials(v) { return String(v || "").split(" ").filter(Boolean).slice(0, 2).map((p) => p[0].toUpperCase()).join(""); }
-function human(v) { return String(v || "").replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase()); }
-function fmt(v) { return v ? new Date(v).toLocaleString(undefined, { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" }) : "Unscheduled"; }
-function time(v) { return v ? new Date(v).toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" }) : "--"; }
-function hour(h) { const d = new Date(); d.setHours(h, 0, 0, 0); return d.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" }); }
-function parseDateTime(v) { return v ? new Date(v) : null; }
-function parseDate(v) { return v ? new Date(`${v}T00:00:00`) : null; }
-function toDateInput(d) { const x = new Date(d.getTime() - d.getTimezoneOffset() * 60000); return x.toISOString().slice(0, 10); }
-function toDateTimeInput(d) { const x = new Date(d.getTime() - d.getTimezoneOffset() * 60000); return x.toISOString().slice(0, 16); }
-function same(a, b) { return a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate(); }
-function readError(error) { return String(error?.message || error || "Unknown error."); }
-function goalTitle(id) { return state.goals.find((g) => g.id === id)?.title || "Unknown goal"; }
-function esc(v) { return String(v ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/\"/g, "&quot;").replace(/'/g, "&#39;"); }
+async function fetchJson(url, options = {}) {
+  const started = performance.now();
+  const method = options.method || "GET";
+  const headers = {
+    "Content-Type": "application/json",
+    ...(options.headers || {}),
+  };
+  if (state.apiKey) {
+    headers["X-Telova-API-Key"] = state.apiKey;
+  }
+
+  try {
+    const response = await fetch(url, { ...options, headers });
+    const type = response.headers.get("content-type") || "";
+    const payload = type.includes("application/json") ? await response.json() : await response.text();
+    trackRequest(method, url, response.status, Math.round(performance.now() - started));
+    if (!response.ok) {
+      throw new Error(typeof payload === "string" ? payload : JSON.stringify(payload));
+    }
+    return payload;
+  } catch (error) {
+    trackRequest(method, url, "ERR", Math.round(performance.now() - started));
+    throw error;
+  }
+}
+
+function trackRequest(method, url, status, duration) {
+  state.requestHistory.unshift({
+    method,
+    url,
+    status: String(status),
+    duration,
+    at: new Date().toISOString(),
+  });
+  state.requestHistory = state.requestHistory.slice(0, 20);
+}
+
+function showLoading(title, messages) {
+  clearLoading();
+  els.loadingTitle.textContent = title;
+  els.loadingMessage.textContent = messages[0] || "";
+  els.loadingModal.classList.remove("is-hidden");
+  if (messages.length > 1) {
+    let index = 0;
+    loadingTimer = setInterval(() => {
+      index = (index + 1) % messages.length;
+      els.loadingMessage.textContent = messages[index];
+    }, 1000);
+  }
+}
+
+function hideLoading() {
+  clearLoading();
+  els.loadingModal.classList.add("is-hidden");
+}
+
+function clearLoading() {
+  if (loadingTimer) {
+    clearInterval(loadingTimer);
+    loadingTimer = null;
+  }
+}
+
+function setStatus(message) {
+  els.workspaceStatus.textContent = message;
+}
+
+function selectedGoal() {
+  return state.goals.find((goal) => goal.id === state.selectedGoalId) || null;
+}
+
+function tasksForGoal(goalId) {
+  return state.tasks
+    .filter((task) => task.goal_id === goalId)
+    .sort((left, right) => (left.order_index || 0) - (right.order_index || 0));
+}
+
+function relatedNotes() {
+  if (!state.selectedGoalId) return [...state.notes].sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+  const selected = state.notes.filter((note) => note.goal_id === state.selectedGoalId);
+  return (selected.length ? selected : state.notes).sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+}
+
+function todayEvents() {
+  return eventsForDay(new Date());
+}
+
+function eventsForDay(date) {
+  return state.events
+    .filter((event) => sameDay(new Date(event.start_at), date))
+    .sort((left, right) => new Date(left.start_at) - new Date(right.start_at));
+}
+
+function buildWorkspaceSummaryCards() {
+  const today = todayEvents();
+  const done = state.tasks.filter((task) => task.status === "done").length;
+  return [
+    { title: "Goals", detail: `${state.goals.length} active lane(s)` },
+    { title: "Tasks completed", detail: `${done}/${state.tasks.length || 0}` },
+    { title: "Today", detail: `${today.length} scheduled block(s)` },
+  ];
+}
+
+function actionChip(item, className) {
+  const prompt = item.prompt ? ` data-prompt="${esc(item.prompt)}"` : "";
+  const value = item.value ? ` data-value="${esc(item.value)}"` : "";
+  return `<button class="${className}" type="button" data-action="${esc(item.action)}"${prompt}${value}>${esc(item.label)}</button>`;
+}
+
+function metricRow(label, value) {
+  return `
+    <div class="context-row">
+      <strong>${esc(label)}</strong>
+      <p class="card-copy">${esc(value)}</p>
+    </div>
+  `;
+}
+
+function emptyState(title, detail) {
+  return `
+    <div class="empty-state">
+      <strong>${esc(title)}</strong>
+      <p class="card-copy">${esc(detail)}</p>
+    </div>
+  `;
+}
+
+function toneForStatus(status) {
+  if (status === "connected" || status === "ready" || status === "done") return "success";
+  if (status === "warning" || status === "pending") return "warning";
+  if (status === "danger" || status === "error" || status === "blocked") return "danger";
+  return "";
+}
+
+function parseDeadlineInput(text) {
+  const lower = text.toLowerCase();
+  const now = new Date();
+
+  if (lower.includes("tomorrow")) {
+    const tomorrow = new Date(now);
+    tomorrow.setDate(tomorrow.getDate() + 1);
+    tomorrow.setHours(18, 0, 0, 0);
+    return tomorrow;
+  }
+
+  if (lower.includes("next week")) {
+    const nextWeek = new Date(now);
+    nextWeek.setDate(nextWeek.getDate() + 7);
+    nextWeek.setHours(18, 0, 0, 0);
+    return nextWeek;
+  }
+
+  const relativeMatch = lower.match(/(?:in|by)?\s*(\d+)\s+(day|days|week|weeks|month|months)/);
+  if (relativeMatch) {
+    const amount = Number(relativeMatch[1]);
+    const unit = relativeMatch[2];
+    const date = new Date(now);
+    if (unit.startsWith("day")) date.setDate(date.getDate() + amount);
+    if (unit.startsWith("week")) date.setDate(date.getDate() + amount * 7);
+    if (unit.startsWith("month")) date.setMonth(date.getMonth() + amount);
+    date.setHours(18, 0, 0, 0);
+    return date;
+  }
+
+  const clean = text.replace(/^by\s+/i, "").trim();
+  const parsed = new Date(clean);
+  if (!Number.isNaN(parsed.getTime())) {
+    if (parsed.getHours() === 0 && parsed.getMinutes() === 0) {
+      parsed.setHours(18, 0, 0, 0);
+    }
+    return parsed;
+  }
+
+  return null;
+}
+
+function parsePriority(text) {
+  const lower = text.toLowerCase();
+  if (/\bhigh\b|\burgent\b|\bcritical\b/.test(lower)) return "High";
+  if (/\bbalanced\b|\bmedium\b|\bnormal\b/.test(lower)) return "Balanced";
+  if (/\bflexible\b|\blow\b|\blighter\b/.test(lower)) return "Flexible";
+  return null;
+}
+
+function extractConstraintHints(text) {
+  const lower = text.toLowerCase();
+  const hints = [];
+  if (/\bweekday/.test(lower)) hints.push("Weekdays only");
+  if (/\bweekend/.test(lower) && /\bavoid|no\b/.test(lower)) hints.push("Avoid weekends");
+  if (/\bevening/.test(lower) && /\bavoid|no\b/.test(lower)) hints.push("Avoid late evenings");
+  if (/\b1 hour\b|\bone hour\b/.test(lower)) hints.push("Plan around one hour per day");
+  if (/\bafter 6\b/.test(lower)) hints.push("Avoid work after 6 PM");
+  if (/\bmorning/.test(lower) && /\bonly\b/.test(lower)) hints.push("Morning-only schedule");
+  return hints;
+}
+
+function splitConstraints(text) {
+  return text
+    .split(/,|;|\band\b/gi)
+    .map((item) => item.trim())
+    .filter(Boolean);
+}
+
+function extractGoalText(text) {
+  const cleaned = text
+    .replace(/^(help me|can you|please|i want to|i need to|create a goal to|plan|help me plan|goal:)\s+/i, "")
+    .replace(/[.?!]+$/, "")
+    .trim();
+
+  if (
+    !cleaned ||
+    /^create (a )?new goal$/i.test(cleaned) ||
+    /^help me create (a )?new goal$/i.test(cleaned) ||
+    /^create a goal$/i.test(cleaned)
+  ) {
+    return "";
+  }
+
+  return cleaned;
+}
+
+function isGoalCreationIntent(text) {
+  const lower = text.toLowerCase().trim();
+  return (
+    /create a goal|new goal|help me plan|plan this|my goal is|i want to|i need to|i'd like to/.test(lower) ||
+    (!looksLikeQuestion(text) && /(launch|promot|prepare|learn|build|ship|become|grow|improve|deliver)/.test(lower))
+  );
+}
+
+function looksLikeQuestion(text) {
+  const lower = text.toLowerCase().trim();
+  return lower.endsWith("?") || /^(what|how|when|which|show|list|do|am|is|are|can)/.test(lower);
+}
+
+function isApprovalIntent(text) {
+  return /\bapprove\b|\byes\b|\blooks good\b|\bgo ahead\b|\bcreate it\b/.test(text.toLowerCase());
+}
+
+function isRevisionIntent(text) {
+  return /\bedit\b|\brevise\b|\bchange\b|\badjust\b|\bmodify\b|\bnot yet\b|\bmake it\b/.test(text.toLowerCase());
+}
+
+function hasRevisionPayload(text) {
+  const lower = text.toLowerCase();
+  return isRevisionIntent(text) && lower.replace(/\b(edit|revise|change|adjust|modify|make it)\b/g, "").trim().length > 0;
+}
+
+function isCancelIntent(text) {
+  return /\bcancel\b|\bstart over\b|\bdrop this\b/.test(text.toLowerCase());
+}
+
+function isRefreshIntent(text) {
+  return /\brefresh\b|\bsync now\b|\breload\b/.test(text.toLowerCase());
+}
+
+function isNoneIntent(text) {
+  return /^(none|no|no constraints|nothing)$/i.test(text.trim());
+}
+
+function isConflictIntent(text) {
+  return /\bconflict\b|\bcheck conflicts\b|\bscan conflicts\b/.test(text.toLowerCase());
+}
+
+function isWeeklyReviewIntent(text) {
+  return /\bweekly review\b|\breplan\b|\badapt plan\b|\breview progress\b/.test(text.toLowerCase());
+}
+
+function isNextActionQuery(text) {
+  return /\bwhat should i do next\b|\bnext task\b|\bwhat next\b|\bnext step\b/.test(text.toLowerCase());
+}
+
+function isScheduleQuery(text) {
+  return /\bschedule\b|\bcalendar\b|\bdue today\b|\bwhat'?s due today\b|\btoday\b|\btomorrow\b|\bupcoming events\b/.test(text.toLowerCase());
+}
+
+function isProgressQuery(text) {
+  return /\bprogress\b|\bhow am i doing\b|\bstatus\b|\bcompletion\b/.test(text.toLowerCase());
+}
+
+function isTaskQuery(text) {
+  return /\btasks\b|\bto-?do\b|\bbacklog\b/.test(text.toLowerCase());
+}
+
+function isGoalQuery(text) {
+  return /\bgoals\b|\bactive goals\b|\bgoal status\b/.test(text.toLowerCase());
+}
+
+function isNoteQuery(text) {
+  return /\bnotes\b|\bmemory\b|\bremembered\b/.test(text.toLowerCase());
+}
+
+function isSystemQuery(text) {
+  return /\bsystem\b|\bsync\b|\bintegration\b|\bhealth\b|\bstatus of the app\b/.test(text.toLowerCase());
+}
+
+function isNoteCaptureIntent(text) {
+  return /^(remember|note that|save note|capture note)/i.test(text.trim());
+}
+
+function extractNoteText(text) {
+  return text.replace(/^(remember|note that|save note|capture note)\s*/i, "").trim();
+}
+
+function noteTitleFromContent(content) {
+  const words = content.split(/\s+/).slice(0, 5).join(" ");
+  return words ? `Note: ${words}` : "Operational note";
+}
+
+function isTaskUpdateIntent(text) {
+  return /\bmark\b.+\b(done|complete|blocked|active|in progress)\b/.test(text.toLowerCase());
+}
+
+function parseTaskStatus(text) {
+  const lower = text.toLowerCase();
+  if (/\bblocked\b/.test(lower)) return "blocked";
+  if (/\bactive\b|\bin progress\b/.test(lower)) return "active";
+  if (/\bdone\b|\bcomplete\b/.test(lower)) return "done";
+  return null;
+}
+
+function findTaskFromText(text) {
+  const cleaned = text
+    .toLowerCase()
+    .replace(/mark|task|as|done|complete|completed|blocked|active|in progress/gi, "")
+    .trim();
+  if (!cleaned) return null;
+
+  const candidates = [...(selectedGoal() ? tasksForGoal(state.selectedGoalId) : state.tasks)];
+  let best = null;
+  let bestScore = 0;
+
+  candidates.forEach((task) => {
+    const score = overlapScore(cleaned, task.title.toLowerCase());
+    if (score > bestScore) {
+      best = task;
+      bestScore = score;
+    }
+  });
+
+  return bestScore >= 2 ? best : null;
+}
+
+function overlapScore(query, title) {
+  const tokens = query.split(/\s+/).filter((item) => item.length > 2);
+  return tokens.reduce((count, token) => count + (title.includes(token) ? 1 : 0), 0);
+}
+
+function resolveQueryDate(text) {
+  const lower = text.toLowerCase();
+  const date = new Date();
+  if (lower.includes("tomorrow")) {
+    date.setDate(date.getDate() + 1);
+  }
+  return date;
+}
+
+function paragraphs(text) {
+  return esc(text)
+    .split(/\n{2,}/)
+    .map((line) => `<p>${line.replace(/\n/g, "<br>")}</p>`)
+    .join("");
+}
+
+function formatDate(value) {
+  return value
+    ? new Date(value).toLocaleString(undefined, {
+        month: "short",
+        day: "numeric",
+        hour: "numeric",
+        minute: "2-digit",
+      })
+    : "Unscheduled";
+}
+
+function formatTimeRange(start, end) {
+  if (!start || !end) return "Unscheduled";
+  const startDate = new Date(start);
+  const endDate = new Date(end);
+  const datePart = startDate.toLocaleDateString(undefined, { month: "short", day: "numeric" });
+  const startPart = startDate.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
+  const endPart = endDate.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
+  return `${datePart} | ${startPart} - ${endPart}`;
+}
+
+function formatMessageTime(value) {
+  return new Date(value).toLocaleTimeString(undefined, {
+    hour: "numeric",
+    minute: "2-digit",
+  });
+}
+
+function goalTitle(goalId) {
+  return state.goals.find((goal) => goal.id === goalId)?.title || "Unknown goal";
+}
+
+function truncate(text, max) {
+  return text.length > max ? `${text.slice(0, max - 1)}…` : text;
+}
+
+function sameDay(left, right) {
+  return (
+    left.getFullYear() === right.getFullYear() &&
+    left.getMonth() === right.getMonth() &&
+    left.getDate() === right.getDate()
+  );
+}
+
+function prettyName(value) {
+  return String(value || "devaraj")
+    .split("@")[0]
+    .replace(/[._-]+/g, " ")
+    .split(" ")
+    .filter(Boolean)
+    .map((part) => part[0].toUpperCase() + part.slice(1))
+    .join(" ");
+}
+
+function userIdFromEmail(value) {
+  return String(value || "")
+    .split("@")[0]
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+}
+
+function initials(value) {
+  return String(value || "")
+    .split(" ")
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((part) => part[0].toUpperCase())
+    .join("");
+}
+
+function human(value) {
+  return String(value || "")
+    .replace(/_/g, " ")
+    .replace(/\b\w/g, (letter) => letter.toUpperCase());
+}
+
+function readError(error) {
+  return String(error?.message || error || "Unknown error.");
+}
+
+function esc(value) {
+  return String(value ?? "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}

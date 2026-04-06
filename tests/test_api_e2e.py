@@ -74,6 +74,52 @@ def test_goal_plan_conflict_scan_flow(client: TestClient):
     assert alerts[0]["task_id"] == first_task["id"]
 
 
+def test_goal_preview_then_create_flow(client: TestClient):
+    preview_response = client.post(
+        "/api/v1/goals/preview",
+        json={
+            "user_id": "demo-user",
+            "goal": "Get promoted to Senior Engineer",
+            "description": "Need stronger leadership evidence.",
+            "priority": "High",
+            "constraints": [
+                "Weekday focus blocks only",
+                "Avoid meetings after 6 PM",
+            ],
+        },
+    )
+    assert preview_response.status_code == 200
+    preview = preview_response.json()
+    assert preview["tasks"]
+    assert preview["dag"]["nodes"]
+    assert "Priority is set to High" in preview["summary"]
+
+    goal_list_before = client.get("/api/v1/goals", params={"user_id": "demo-user"})
+    assert goal_list_before.status_code == 200
+    before_count = len(goal_list_before.json())
+
+    create_response = client.post(
+        "/api/v1/goals",
+        json={
+            "user_id": "demo-user",
+            "goal": "Get promoted to Senior Engineer",
+            "description": "Need stronger leadership evidence.",
+            "priority": "High",
+            "constraints": [
+                "Weekday focus blocks only",
+                "Avoid meetings after 6 PM",
+            ],
+        },
+    )
+    assert create_response.status_code == 200
+    created = create_response.json()
+    assert created["tasks"]
+
+    goal_list_after = client.get("/api/v1/goals", params={"user_id": "demo-user"})
+    assert goal_list_after.status_code == 200
+    assert len(goal_list_after.json()) == before_count + 1
+
+
 def test_notes_create_and_update_flow(client: TestClient):
     note_response = client.post(
         "/api/v1/notes",

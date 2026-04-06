@@ -23,7 +23,9 @@ from telova_api.schemas import (
     DashboardRead,
     GoalCreateRequest,
     GoalDagResponse,
+    GoalPlanPreviewResponse,
     GoalPlanResponse,
+    GoalPreviewTaskRead,
     GoalRead,
     GoalSwitchRequest,
     NoteCreateRequest,
@@ -140,6 +142,24 @@ async def create_goal(
         tasks=[TaskRead.model_validate(task) for task in tasks],
         calendar_events=[
             CalendarEventRead.model_validate(event) for event in events
+        ],
+    )
+
+
+@app.post("/api/v1/goals/preview", response_model=GoalPlanPreviewResponse)
+async def preview_goal(
+    payload: GoalCreateRequest,
+    orchestrator=Depends(get_orchestrator),
+):
+    preview = await orchestrator.preview_goal_plan(payload)
+    return GoalPlanPreviewResponse(
+        domain=preview["domain"],
+        deadline=preview["deadline"],
+        summary=preview["summary"],
+        dag=GoalDagResponse.model_validate(preview["dag"]),
+        tasks=[
+            GoalPreviewTaskRead.model_validate(task)
+            for task in preview["tasks"]
         ],
     )
 

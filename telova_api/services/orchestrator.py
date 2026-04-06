@@ -60,11 +60,33 @@ class TelovaOrchestratorService:
         self.progress_adaptor = progress_adaptor
         self.auto_resolve_conflicts = auto_resolve_conflicts
 
-    async def create_goal_plan(self, request: GoalCreateRequest) -> tuple[Goal, dict, list[Task], list]:
+    async def preview_goal_plan(self, request: GoalCreateRequest) -> dict:
+        planning_description = self._compose_planning_description(request)
         existing_events = await self.calendar_gateway.list_all(user_id=request.user_id)
         plan_result = self.planning_runtime.build_plan(
             goal_text=request.goal,
-            description=request.description,
+            description=planning_description,
+            deadline=request.deadline,
+            busy_windows=[
+                BusyWindow(start_at=event.start_at, end_at=event.end_at)
+                for event in existing_events
+            ],
+        )
+        plan = await plan_result if inspect.isawaitable(plan_result) else plan_result
+        return {
+            "domain": plan.domain,
+            "deadline": plan.deadline,
+            "summary": self._build_preview_summary(request, plan),
+            "dag": plan.dag,
+            "tasks": plan.tasks,
+        }
+
+    async def create_goal_plan(self, request: GoalCreateRequest) -> tuple[Goal, dict, list[Task], list]:
+        planning_description = self._compose_planning_description(request)
+        existing_events = await self.calendar_gateway.list_all(user_id=request.user_id)
+        plan_result = self.planning_runtime.build_plan(
+            goal_text=request.goal,
+            description=planning_description,
             deadline=request.deadline,
             busy_windows=[
                 BusyWindow(start_at=event.start_at, end_at=event.end_at)
@@ -77,7 +99,7 @@ class TelovaOrchestratorService:
             Goal(
                 user_id=request.user_id,
                 title=request.goal,
-                description=request.description,
+                description=planning_description,
                 domain=plan.domain,
                 deadline=plan.deadline,
                 dag_json={},
@@ -128,6 +150,12 @@ class TelovaOrchestratorService:
         await self.task_gateway.sync_generated_tasks(goal, tasks)
         goal.dag_json = self._hydrate_dag(plan.dag, tasks)
         await self.goal_repo.save(goal)
+        await self.notes_gateway.create_status_report(
+            user_id=goal.user_id,
+            goal_id=goal.id,
+            title=f"Goal activated: {goal.title}",
+            content=self._build_activation_note(goal.title, tasks),
+        )
         return goal, goal.dag_json, tasks, events
 
     async def list_goals(self, user_id: str) -> list[Goal]:
@@ -454,4 +482,54 @@ class TelovaOrchestratorService:
 
     def _serialize_datetime(self, value: datetime | None) -> str | None:
         return value.isoformat() if value else None
+
+    def _compose_planning_description(self, request: GoalCreateRequest) -> str | None:
+        parts: list[str] = []
+        if request.description:
+            parts.append(request.description.strip())
+        if request.priority:
+            parts.append(f"Priority: {request.priority.strip()}.")
+        if request.constraints:
+            cleaned = [item.strip() for item in request.constraints if item.strip()]
+            if cleaned:
+                parts.append(f"Constraints: {'; '.join(cleaned)}.")
+        return " ".join(parts).strip() or None
+
+    def _build_preview_summary(self, request: GoalCreateRequest, plan) -> str:
+        milestone_count = sum(1 for task in plan.tasks if task.get("milestone"))
+        schedule_start = plan.tasks[0]["scheduled_start"] if plan.tasks else None
+        schedule_end = plan.tasks[-1]["scheduled_end"] if plan.tasks else None
+        pieces = [
+            f'Telova prepared a {plan.domain.replace("_", " ")} plan for "{request.goal}".',
+            f"It contains {len(plan.tasks)} tasks and {milestone_count} milestones.",
+        ]
+        if request.priority:
+            pieces.append(f"Priority is set to {request.priority}.")
+        if schedule_start and schedule_end:
+            pieces.append(
+                "The proposed execution window runs from "
+                f"{schedule_start.strftime('%b %d, %Y %I:%M %p')} to "
+                f"{schedule_end.strftime('%b %d, %Y %I:%M %p')}."
+            )
+        return " ".join(pieces)
+
+    def _build_activation_note(self, goal_title: str, tasks: list[Task]) -> str:
+        if not tasks:
+            return f'Telova activated the goal "{goal_title}".'
+
+        first_task = tasks[0]
+        last_task = tasks[-1]
+        milestones = [task.title for task in tasks if "delivery" in task.phase or "planning" in task.phase][:3]
+        lines = [
+            f'Telova activated "{goal_title}".',
+            f"{len(tasks)} tasks were created and synced to the execution system.",
+            (
+                "Initial execution window: "
+                f"{first_task.scheduled_start.strftime('%b %d, %Y %I:%M %p')} to "
+                f"{last_task.scheduled_end.strftime('%b %d, %Y %I:%M %p')}."
+            ),
+        ]
+        if milestones:
+            lines.append(f"Key checkpoints: {', '.join(milestones)}.")
+        return " ".join(lines)
 

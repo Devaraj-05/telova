@@ -3,134 +3,86 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Telova Command Center</title>
+  <title>Telova</title>
   <link rel="stylesheet" href="/static/app.css">
   <script defer src="/static/app.js"></script>
 </head>
 <body>
-  <div class="ambient-backdrop"></div>
+  <div class="page-glow"></div>
 
   <section class="welcome-screen" id="welcomeScreen">
-    <div class="welcome-left">
+    <div class="welcome-panel">
       <div class="brand-lockup">
-        <div class="brand-mark">T</div>
+        <div class="logo-mark" aria-hidden="true">
+          <span class="logo-dot"></span>
+        </div>
         <div>
-          <p class="brand-eyebrow">Command Center AI</p>
-          <h1>Telova</h1>
+          <p class="eyebrow">Primary lockup</p>
+          <h1>telova</h1>
         </div>
       </div>
 
       <div class="welcome-copy">
-        <span class="hero-chip hero-chip-brand">Multi-Agent Productivity System</span>
-        <h2>Turn goals into an orchestrated execution system.</h2>
+        <span class="pill pill-brand">AI Execution Companion</span>
+        <h2>Chat with your goals until they become scheduled work.</h2>
         <p>
-          Telova coordinates planning, scheduling, notes, and adaptive re-planning
-          through a command center interface built for live demos and API-first deployment.
+          Telova is a chat-first command center. Ask it to create goals, review
+          progress, inspect calendar pressure, capture notes, and adapt plans
+          without switching into manual forms.
         </p>
       </div>
 
-      <div class="feature-list">
-        <div class="feature-item">
-          <div class="feature-icon agent-orchestrator">OR</div>
-          <div>
-            <h3>Primary orchestration</h3>
-            <p>Route one goal across specialized agents, tasks, schedules, and context memory.</p>
-          </div>
+      <div class="welcome-highlights">
+        <div class="highlight-card">
+          <strong>Goal intake in chat</strong>
+          <p>The agent asks for deadline, constraints, and priority before it drafts anything.</p>
         </div>
-        <div class="feature-item">
-          <div class="feature-icon agent-scheduler">SC</div>
-          <div>
-            <h3>Adaptive scheduling</h3>
-            <p>Detect conflicts early, re-sequence pending work, and surface free slots automatically.</p>
-          </div>
+        <div class="highlight-card">
+          <strong>Approve inside the thread</strong>
+          <p>Task DAG previews appear in chat first. Creation and syncing happen only after approval.</p>
         </div>
-        <div class="feature-item">
-          <div class="feature-icon agent-memory">ME</div>
-          <div>
-            <h3>Structured memory</h3>
-            <p>Preserve context packages, weekly summaries, and linked notes around every goal.</p>
-          </div>
-        </div>
-      </div>
-
-      <div class="workflow-card">
-        <div class="workflow-header">
-          <span class="hero-chip hero-chip-soft">Agent Workflow</span>
-          <span class="workflow-status">Live routing</span>
-        </div>
-        <div class="workflow-track">
-          <div class="workflow-step">
-            <span class="step-dot"></span>
-            <div>
-              <strong>Goal intake</strong>
-              <p>Parse outcome, horizon, and constraints.</p>
-            </div>
-          </div>
-          <div class="workflow-step">
-            <span class="step-dot"></span>
-            <div>
-              <strong>Plan graph</strong>
-              <p>Build task dependencies and milestone blocks.</p>
-            </div>
-          </div>
-          <div class="workflow-step">
-            <span class="step-dot"></span>
-            <div>
-              <strong>Calendar sync</strong>
-              <p>Materialize time blocks and scan for collisions.</p>
-            </div>
-          </div>
-          <div class="workflow-step">
-            <span class="step-dot"></span>
-            <div>
-              <strong>Weekly adaptation</strong>
-              <p>Re-plan if execution drifts beyond threshold.</p>
-            </div>
-          </div>
+        <div class="highlight-card">
+          <strong>Automatic sync after approval</strong>
+          <p>Tasks, schedule, notes, and dashboard context update without manual intervention.</p>
         </div>
       </div>
     </div>
 
-    <div class="welcome-right">
-      <div class="auth-card">
+    <div class="signin-panel">
+      <div class="signin-card">
         <div>
-          <span class="hero-chip hero-chip-soft">Welcome back</span>
-          <h3>Sign in to your command center</h3>
-          <p>Use the demo flow for local mode, or enter your deployed API key to unlock protected cloud endpoints.</p>
+          <span class="pill pill-soft">Welcome</span>
+          <h3>Open your Telova workspace</h3>
+          <p>Use demo credentials locally, or add your deployed API key for protected cloud endpoints.</p>
         </div>
 
-        <div class="field-group">
-          <label for="welcomeEmail">Email</label>
+        <label class="field-group">
+          <span>Email</span>
           <input id="welcomeEmail" class="input" type="email" value="devaraj@telova.ai" placeholder="devaraj@telova.ai">
-        </div>
+        </label>
 
-        <div class="field-group">
-          <label for="welcomePassword">Password / API Key</label>
+        <label class="field-group">
+          <span>Password / API Key</span>
           <input id="welcomePassword" class="input" type="password" value="demo-pass" placeholder="Enter password or API key">
+        </label>
+
+        <div class="signin-actions">
+          <button id="enterWorkspaceButton" class="button button-primary" type="button">Enter workspace</button>
+          <button id="continueGoogleButton" class="button button-secondary" type="button">Continue with Google</button>
         </div>
 
-        <button id="enterWorkspaceButton" class="button button-primary">Sign In</button>
-
-        <div class="auth-divider">
-          <span></span>
-          <p>or continue with</p>
-          <span></span>
-        </div>
-
-        <button id="continueGoogleButton" class="button button-secondary">Continue with Google</button>
-
-        <div class="auth-footer">
-          <div class="mini-stat">
-            <strong>4</strong>
-            <span>Core agents</span>
+        <div class="signin-meta">
+          <div>
+            <strong>Chat-first</strong>
+            <span>No manual forms</span>
           </div>
-          <div class="mini-stat">
-            <strong>3</strong>
-            <span>MCP tools</span>
+          <div>
+            <strong>Auto-sync</strong>
+            <span>Calendar, tasks, notes</span>
           </div>
-          <div class="mini-stat">
-            <strong>API</strong>
-            <span>Cloud ready</span>
+          <div>
+            <strong>Cloud ready</strong>
+            <span>Run, AlloyDB, Scheduler</span>
           </div>
         </div>
       </div>
@@ -139,591 +91,132 @@
 
   <div class="app-shell is-hidden" id="appShell">
     <aside class="sidebar">
-      <div class="sidebar-top">
-        <div class="sidebar-brand">
-          <div class="brand-mark">T</div>
+      <div class="sidebar-section">
+        <div class="brand-lockup compact">
+          <div class="logo-mark small" aria-hidden="true">
+            <span class="logo-dot"></span>
+          </div>
           <div>
-            <p class="brand-eyebrow">Command Center AI</p>
-            <strong>Telova</strong>
+            <p class="eyebrow">Command center</p>
+            <strong class="brand-title">telova</strong>
           </div>
         </div>
 
-        <label class="sidebar-search">
-          <span>Search</span>
-          <input id="sidebarSearch" class="input input-compact" type="text" placeholder="Quick find">
-        </label>
-
-        <nav class="sidebar-nav" id="sidebarNav">
-          <button class="nav-item is-active" data-view="dashboard">
-            <span class="nav-icon">DB</span>
-            <span>Dashboard</span>
-          </button>
-          <button class="nav-item" data-view="goals">
-            <span class="nav-icon">GL</span>
-            <span>Goals</span>
-          </button>
-          <button class="nav-item" data-view="calendar">
-            <span class="nav-icon">CL</span>
-            <span>Calendar</span>
-          </button>
-          <button class="nav-item" data-view="tasks">
-            <span class="nav-icon">TS</span>
-            <span>Tasks</span>
-          </button>
-          <button class="nav-item" data-view="notes">
-            <span class="nav-icon">NT</span>
-            <span>Notes</span>
-          </button>
-          <button class="nav-item" data-view="agents">
-            <span class="nav-icon">AG</span>
-            <span>Agents</span>
-          </button>
-          <button class="nav-item" data-view="activity">
-            <span class="nav-icon">AC</span>
-            <span>Activity</span>
-          </button>
-          <button class="nav-item" data-view="settings">
-            <span class="nav-icon">SY</span>
-            <span>Settings</span>
-          </button>
-        </nav>
-      </div>
-
-      <div class="sidebar-footer">
-        <div class="profile-card">
+        <div class="workspace-card">
           <div class="profile-avatar" id="profileAvatar">DV</div>
           <div>
             <strong id="profileName">Devaraj</strong>
-            <p id="profileRole">Operator, Telova Workspace</p>
+            <p id="profileRole">Operator, demo-user</p>
           </div>
         </div>
+      </div>
+
+      <div class="sidebar-section">
+        <p class="section-label">Quick prompts</p>
+        <div class="prompt-list" id="quickPromptList"></div>
+      </div>
+
+      <div class="sidebar-section">
+        <div class="section-header">
+          <p class="section-label">Goals</p>
+          <span class="section-count" id="goalCount">0</span>
+        </div>
+        <div class="goal-list" id="goalList"></div>
+      </div>
+
+      <div class="sidebar-section">
+        <p class="section-label">Connections</p>
+        <div class="connection-list" id="sidebarConnections"></div>
       </div>
     </aside>
 
-    <main class="workspace">
+    <main class="chat-workspace">
       <header class="workspace-header">
-        <div class="header-copy">
-          <p class="view-eyebrow" id="headerEyebrow">Command Center</p>
-          <h2 id="headerTitle">Hello, Devaraj</h2>
-          <p id="headerSubtitle">Coordinate tasks, schedules, notes, and adaptive planning from one workspace.</p>
+        <div>
+          <p class="eyebrow">Agent chat</p>
+          <h2 id="workspaceTitle">Telova Workspace</h2>
+          <p class="workspace-subtitle" id="workspaceSubtitle">
+            Ask about goals, schedule, tasks, notes, progress, or tell Telova what you want to achieve next.
+          </p>
         </div>
-
-        <div class="header-actions">
-          <label class="header-search">
-            <span>Search</span>
-            <input id="globalSearchInput" class="input input-compact" type="text" placeholder="Search tasks, notes, goals">
-          </label>
-          <button id="refreshWorkspaceButton" class="icon-button" type="button">RF</button>
-          <button id="runConflictsButton" class="icon-button" type="button">CF</button>
-          <button id="headerNewGoalButton" class="button button-primary" type="button">New Goal</button>
+        <div class="header-status">
+          <span class="status-pill" id="workspaceStatus">Workspace ready</span>
         </div>
       </header>
 
-      <section class="status-strip">
-        <div class="status-chip status-chip-info" id="statusBanner">Workspace ready.</div>
-        <div class="agent-pulse-row" id="agentPulseRow"></div>
-      </section>
+      <section class="chat-thread" id="chatThread"></section>
 
-      <div class="search-results is-hidden" id="searchResults"></div>
-
-      <section class="view-stack">
-        <section class="view is-active" data-view="dashboard">
-          <div class="dashboard-layout">
-            <article class="surface-card dashboard-goal-overview">
-              <div class="card-header">
-                <div>
-                  <p class="card-label">Goal Overview</p>
-                  <h3>Mission control</h3>
-                </div>
-                <button class="button button-ghost" id="dashboardOpenPlanButton" type="button">Open Plan</button>
-              </div>
-              <div id="dashboardGoalOverview"></div>
-            </article>
-
-            <article class="surface-card metric-card">
-              <p class="card-label">Metric</p>
-              <div id="metricActiveGoals"></div>
-            </article>
-
-            <article class="surface-card metric-card">
-              <p class="card-label">Metric</p>
-              <div id="metricTaskVelocity"></div>
-            </article>
-
-            <article class="surface-card dashboard-schedule">
-              <div class="card-header">
-                <div>
-                  <p class="card-label">Today&apos;s Schedule</p>
-                  <h3>Time-blocked command queue</h3>
-                </div>
-                <span class="hero-chip hero-chip-soft" id="todayScheduleBadge">0 blocks</span>
-              </div>
-              <div class="timeline-list" id="dashboardSchedule"></div>
-            </article>
-
-            <article class="surface-card dashboard-suggestions">
-              <div class="card-header">
-                <div>
-                  <p class="card-label">AI Suggestions</p>
-                  <h3>What Telova would do next</h3>
-                </div>
-                <span class="hero-chip hero-chip-brand">Live</span>
-              </div>
-              <div class="suggestion-list" id="dashboardSuggestions"></div>
-            </article>
-
-            <article class="surface-card dashboard-progress">
-              <div class="card-header">
-                <div>
-                  <p class="card-label">Task Progress</p>
-                  <h3>Execution ratio</h3>
-                </div>
-              </div>
-              <div id="dashboardProgress"></div>
-            </article>
-
-            <article class="surface-card dashboard-agents">
-              <div class="card-header">
-                <div>
-                  <p class="card-label">Agent Activity</p>
-                  <h3>Specialist lanes</h3>
-                </div>
-              </div>
-              <div id="dashboardAgents"></div>
-            </article>
-
-            <article class="surface-card dashboard-alerts">
-              <div class="card-header">
-                <div>
-                  <p class="card-label">Alerts / Replan</p>
-                  <h3>Adaptive warnings</h3>
-                </div>
-                <button class="button button-ghost" id="dashboardWeeklyReviewButton" type="button">Run Review</button>
-              </div>
-              <div id="dashboardAlerts"></div>
-            </article>
-          </div>
-        </section>
-
-        <section class="view" data-view="goals">
-          <div class="goal-creation-layout">
-            <div class="surface-card goal-form-card">
-              <div class="card-header">
-                <div>
-                  <p class="card-label">Goal Creation</p>
-                  <h3>Design the next execution lane</h3>
-                </div>
-              </div>
-
-              <div class="form-stack">
-                <div class="field-group">
-                  <label for="goalUserId">User ID</label>
-                  <input id="goalUserId" class="input" type="text" value="demo-user">
-                </div>
-
-                <div class="field-group">
-                  <label for="goalTextInput">Goal</label>
-                  <textarea id="goalTextInput" class="input textarea" placeholder="Describe the goal you want Telova to orchestrate.">Get promoted to Senior Engineer in 6 months</textarea>
-                </div>
-
-                <div class="field-row">
-                  <div class="field-group">
-                    <label for="goalDeadlineInput">Target deadline</label>
-                    <input id="goalDeadlineInput" class="input" type="datetime-local">
-                  </div>
-                  <div class="field-group">
-                    <label for="goalHorizonInput">Time horizon</label>
-                    <select id="goalHorizonInput" class="input">
-                      <option value="4 weeks">4 weeks</option>
-                      <option value="6 weeks">6 weeks</option>
-                      <option value="3 months">3 months</option>
-                      <option value="6 months" selected>6 months</option>
-                    </select>
-                  </div>
-                </div>
-
-                <div class="field-group">
-                  <label for="goalDescriptionInput">Context and constraints</label>
-                  <textarea id="goalDescriptionInput" class="input textarea small-textarea" placeholder="Current team, risk factors, focus area, constraints."></textarea>
-                </div>
-
-                <div class="field-group">
-                  <label>Priority selector</label>
-                  <div class="priority-row" id="priorityRow">
-                    <button class="priority-pill is-active" data-priority="High" type="button">High</button>
-                    <button class="priority-pill" data-priority="Balanced" type="button">Balanced</button>
-                    <button class="priority-pill" data-priority="Exploratory" type="button">Exploratory</button>
-                  </div>
-                </div>
-
-                <div class="field-group">
-                  <label>Tool connections</label>
-                  <div class="tool-grid">
-                    <div class="tool-card is-connected">
-                      <strong>Calendar</strong>
-                      <p>Time-block execution windows</p>
-                    </div>
-                    <div class="tool-card is-connected">
-                      <strong>Tasks</strong>
-                      <p>Materialize the dependency graph</p>
-                    </div>
-                    <div class="tool-card is-connected">
-                      <strong>Notes</strong>
-                      <p>Store context and replan memory</p>
-                    </div>
-                  </div>
-                </div>
-
-                <div class="button-row">
-                  <button id="generatePlanButton" class="button button-primary" type="button">Generate Plan</button>
-                  <button id="draftPlanButton" class="button button-secondary" type="button">Refresh Preview</button>
-                </div>
-              </div>
-            </div>
-
-            <div class="surface-card goal-preview-card">
-              <div class="card-header">
-                <div>
-                  <p class="card-label">AI Breakdown Preview</p>
-                  <h3>Preview before approval</h3>
-                </div>
-                <span class="hero-chip hero-chip-soft" id="previewModeChip">Draft</span>
-              </div>
-
-              <div class="preview-section">
-                <h4>Summary</h4>
-                <p id="previewSummary"></p>
-              </div>
-
-              <div class="preview-section">
-                <h4>Milestones</h4>
-                <div id="previewMilestones" class="stack-list"></div>
-              </div>
-
-              <div class="preview-section">
-                <h4>Suggested schedule</h4>
-                <div id="previewSchedule" class="stack-list"></div>
-              </div>
-
-              <div class="preview-section">
-                <h4>Risk flags</h4>
-                <div id="previewRisks" class="stack-list"></div>
-              </div>
-
-              <div class="button-row preview-actions">
-                <button id="approvePlanButton" class="button button-primary" type="button" disabled>Approve Plan</button>
-                <button id="editPreviewButton" class="button button-ghost" type="button">Edit Inputs</button>
-              </div>
-            </div>
-          </div>
-        </section>
-
-        <section class="view" data-view="agents">
-          <div class="plan-layout">
-            <div class="plan-left-column">
-              <article class="surface-card compact-card">
-                <p class="card-label">Goal Summary</p>
-                <div id="planGoalSummary"></div>
-              </article>
-
-              <article class="surface-card compact-card">
-                <p class="card-label">Milestone Pulse</p>
-                <div id="planMilestones"></div>
-              </article>
-
-              <article class="surface-card compact-card">
-                <p class="card-label">Agent Assignments</p>
-                <div id="planAgentAssignments"></div>
-              </article>
-            </div>
-
-            <div class="surface-card plan-canvas-card">
-              <div class="card-header">
-                <div>
-                  <p class="card-label">AI Plan View</p>
-                  <h3>Dependency graph</h3>
-                </div>
-                <div class="button-row">
-                  <select id="planGoalSelect" class="input input-compact"></select>
-                  <button id="planToCalendarButton" class="button button-secondary" type="button">Open Schedule</button>
-                </div>
-              </div>
-              <div class="graph-stage" id="graphStage">
-                <svg id="graphEdges" class="graph-edges" aria-hidden="true"></svg>
-                <div id="graphNodes" class="graph-nodes"></div>
-              </div>
-            </div>
-
-            <div class="plan-right-column">
-              <article class="surface-card detail-card">
-                <p class="card-label">Task Details</p>
-                <div id="taskDetailPanel"></div>
-              </article>
-            </div>
-          </div>
-        </section>
-
-        <section class="view" data-view="calendar">
-          <div class="surface-card schedule-header-card">
-            <div class="card-header">
-              <div>
-                <p class="card-label">Calendar &amp; Schedule</p>
-                <h3>Time-blocked execution planner</h3>
-              </div>
-              <div class="button-row">
-                <input id="scheduleDateInput" class="input input-compact" type="date">
-                <button id="calendarSyncButton" class="button button-secondary" type="button">Sync</button>
-                <button id="calendarAddTaskButton" class="button button-primary" type="button">Add Task Block</button>
-              </div>
-            </div>
-          </div>
-
-          <div class="calendar-layout">
-            <div class="calendar-left-column">
-              <article class="surface-card">
-                <p class="card-label">Mini Calendar</p>
-                <div id="miniCalendar"></div>
-              </article>
-              <article class="surface-card">
-                <p class="card-label">Upcoming Deadlines</p>
-                <div id="deadlineList"></div>
-              </article>
-              <article class="surface-card">
-                <p class="card-label">Connected Tools</p>
-                <div id="connectedToolsList"></div>
-              </article>
-            </div>
-
-            <article class="surface-card planner-card">
-              <div class="planner-grid" id="plannerGrid"></div>
-            </article>
-
-            <div class="calendar-right-column">
-              <article class="surface-card">
-                <p class="card-label">Conflict Detector</p>
-                <div id="calendarConflicts"></div>
-              </article>
-              <article class="surface-card">
-                <p class="card-label">Replan Recommendations</p>
-                <div id="calendarRecommendations"></div>
-              </article>
-              <article class="surface-card">
-                <p class="card-label">Free Slots</p>
-                <div id="freeSlotsList"></div>
-              </article>
-            </div>
-          </div>
-        </section>
-
-        <section class="view" data-view="tasks">
-          <div class="surface-card board-header-card">
-            <div class="card-header">
-              <div>
-                <p class="card-label">Task Board</p>
-                <h3>Kanban execution lanes</h3>
-              </div>
-              <div class="button-row">
-                <input id="taskBoardSearch" class="input input-compact" type="text" placeholder="Filter tasks">
-                <select id="taskBoardFilter" class="input input-compact">
-                  <option value="all">All</option>
-                  <option value="pending">Pending</option>
-                  <option value="active">In Progress</option>
-                  <option value="done">Completed</option>
-                </select>
-              </div>
-            </div>
-          </div>
-
-          <div class="kanban-board">
-            <div class="kanban-column">
-              <div class="kanban-header">
-                <h4>Backlog</h4>
-                <span id="backlogCount">0</span>
-              </div>
-              <div class="kanban-stack" id="backlogColumn"></div>
-            </div>
-            <div class="kanban-column">
-              <div class="kanban-header">
-                <h4>Today</h4>
-                <span id="todayCount">0</span>
-              </div>
-              <div class="kanban-stack" id="todayColumn"></div>
-            </div>
-            <div class="kanban-column">
-              <div class="kanban-header">
-                <h4>In Progress</h4>
-                <span id="progressCount">0</span>
-              </div>
-              <div class="kanban-stack" id="inProgressColumn"></div>
-            </div>
-            <div class="kanban-column">
-              <div class="kanban-header">
-                <h4>Completed</h4>
-                <span id="completedCount">0</span>
-              </div>
-              <div class="kanban-stack" id="completedColumn"></div>
-            </div>
-          </div>
-        </section>
-
-        <section class="view" data-view="activity">
-          <div class="replan-layout">
-            <div class="replan-left">
-              <article class="surface-card insight-card">
-                <p class="card-label">Replan Insight</p>
-                <div id="replanInsightCard"></div>
-              </article>
-              <article class="surface-card">
-                <p class="card-label">Missed Tasks Timeline</p>
-                <div id="missedTaskTimeline"></div>
-              </article>
-              <article class="surface-card">
-                <p class="card-label">Reason Tags</p>
-                <div id="reasonTags"></div>
-              </article>
-            </div>
-
-            <div class="replan-right">
-              <article class="surface-card">
-                <div class="card-header">
-                  <div>
-                    <p class="card-label">AI Revised Plan</p>
-                    <h3>Adaptation lane</h3>
-                  </div>
-                  <div class="button-row">
-                    <button id="runWeeklyReviewButton" class="button button-primary" type="button">Run Replan</button>
-                    <button id="rejectReplanButton" class="button button-danger" type="button">Reject</button>
-                  </div>
-                </div>
-                <div id="replanSummary"></div>
-                <div id="replanChanges"></div>
-              </article>
-            </div>
-          </div>
-        </section>
-
-        <section class="view" data-view="notes">
-          <div class="notes-layout">
-            <aside class="surface-card notes-folder-panel">
-              <p class="card-label">Folders</p>
-              <div id="noteFolders"></div>
-            </aside>
-
-            <article class="surface-card note-editor-panel">
-              <div class="card-header">
-                <div>
-                  <p class="card-label">Notes &amp; Memory</p>
-                  <h3 id="selectedNoteTitle">Memory workspace</h3>
-                </div>
-                <div class="button-row">
-                  <span class="hero-chip hero-chip-soft" id="selectedNoteType">Draft</span>
-                  <button id="newNoteButton" class="button button-ghost" type="button">New Note</button>
-                  <button id="saveNoteButton" class="button button-primary" type="button">Save Note</button>
-                </div>
-              </div>
-              <textarea id="noteEditor" class="note-editor" placeholder="Select a note or draft a new operational brief."></textarea>
-            </article>
-
-            <aside class="surface-card notes-context-panel">
-              <p class="card-label">Linked Context</p>
-              <div id="linkedContext"></div>
-            </aside>
-          </div>
-        </section>
-
-        <section class="view" data-view="settings">
-          <div class="system-grid">
-            <article class="surface-card">
-              <div class="card-header">
-                <div>
-                  <p class="card-label">Agent Health</p>
-                  <h3>Operational lanes</h3>
-                </div>
-              </div>
-              <div id="systemAgents"></div>
-            </article>
-
-            <article class="surface-card">
-              <div class="card-header">
-                <div>
-                  <p class="card-label">MCP Connections</p>
-                  <h3>Tool status</h3>
-                </div>
-              </div>
-              <div id="systemConnections"></div>
-            </article>
-
-            <article class="surface-card">
-              <div class="card-header">
-                <div>
-                  <p class="card-label">DB Status</p>
-                  <h3>Persistence health</h3>
-                </div>
-              </div>
-              <div id="systemDatabase"></div>
-            </article>
-
-            <article class="surface-card">
-              <div class="card-header">
-                <div>
-                  <p class="card-label">Workflow Logs</p>
-                  <h3>Recent runs</h3>
-                </div>
-              </div>
-              <div id="systemWorkflowLogs"></div>
-            </article>
-
-            <article class="surface-card">
-              <div class="card-header">
-                <div>
-                  <p class="card-label">API Request History</p>
-                  <h3>Frontend transport</h3>
-                </div>
-              </div>
-              <div id="systemRequestHistory"></div>
-            </article>
-
-            <article class="surface-card">
-              <div class="card-header">
-                <div>
-                  <p class="card-label">Deployment Readiness</p>
-                  <h3>Cloud handoff state</h3>
-                </div>
-              </div>
-              <div id="systemHeartbeat"></div>
-            </article>
-          </div>
-        </section>
-      </section>
+      <footer class="composer-shell">
+        <div class="composer-suggestions" id="suggestionRow"></div>
+        <div class="composer-card">
+          <textarea id="chatComposer" class="composer-input" rows="1" placeholder="Message Telova. Example: Help me get promoted to Senior Engineer in 6 months."></textarea>
+          <button id="sendMessageButton" class="button button-primary" type="button">Send</button>
+        </div>
+        <p class="composer-note">
+          Telova will collect missing deadline, constraints, and priority in chat before it previews the plan.
+        </p>
+      </footer>
     </main>
+
+    <aside class="context-rail">
+      <article class="surface-card">
+        <div class="card-header">
+          <div>
+            <p class="eyebrow">Current lane</p>
+            <h3>Goal snapshot</h3>
+          </div>
+        </div>
+        <div id="contextGoal"></div>
+      </article>
+
+      <article class="surface-card">
+        <div class="card-header">
+          <div>
+            <p class="eyebrow">Execution</p>
+            <h3>Task progress</h3>
+          </div>
+        </div>
+        <div id="contextProgress"></div>
+      </article>
+
+      <article class="surface-card">
+        <div class="card-header">
+          <div>
+            <p class="eyebrow">Today</p>
+            <h3>Schedule</h3>
+          </div>
+        </div>
+        <div id="contextSchedule"></div>
+      </article>
+
+      <article class="surface-card">
+        <div class="card-header">
+          <div>
+            <p class="eyebrow">Memory</p>
+            <h3>Recent notes</h3>
+          </div>
+        </div>
+        <div id="contextNotes"></div>
+      </article>
+
+      <article class="surface-card">
+        <div class="card-header">
+          <div>
+            <p class="eyebrow">System</p>
+            <h3>Sync and health</h3>
+          </div>
+        </div>
+        <div id="contextSystem"></div>
+      </article>
+    </aside>
   </div>
 
   <div class="loading-modal is-hidden" id="loadingModal">
-    <div class="loading-panel">
-      <div class="loading-orb"></div>
-      <p class="card-label">Orchestrator</p>
-      <h3 id="loadingTitle">Planning in progress</h3>
-      <p id="loadingMessage">Telova is generating the execution graph.</p>
-      <div class="loading-bar">
-        <span></span>
-      </div>
-    </div>
-  </div>
-
-  <div class="adaptive-modal is-hidden" id="adaptiveModal">
-    <div class="adaptive-panel">
-      <div class="card-header">
-        <div>
-          <p class="card-label">Replan Suggested</p>
-          <h3>Execution lane adjusted</h3>
-        </div>
-        <button id="closeAdaptiveModalButton" class="icon-button" type="button">X</button>
-      </div>
-      <div id="adaptiveModalContent"></div>
-      <div class="button-row">
-        <button id="adaptiveGoDashboardButton" class="button button-primary" type="button">Back to Dashboard</button>
-        <button id="adaptiveOpenActivityButton" class="button button-secondary" type="button">Open Replan View</button>
-      </div>
+    <div class="loading-card">
+      <div class="loading-ring"></div>
+      <p class="eyebrow">Telova agent</p>
+      <h3 id="loadingTitle">Working on it</h3>
+      <p id="loadingMessage">Refreshing the workspace.</p>
     </div>
   </div>
 </body>

@@ -11,6 +11,21 @@ class GoalCreateRequest(BaseModel):
     goal: str = Field(..., examples=["Get promoted to Senior Engineer in 6 months"])
     description: str | None = None
     deadline: datetime | None = None
+    priority: str | None = None
+    constraints: list[str] = Field(default_factory=list)
+
+
+class GoalPreviewTaskRead(BaseModel):
+    key: str
+    title: str
+    description: str
+    phase: str
+    estimated_minutes: int
+    depends_on: list[str]
+    scheduled_start: datetime | None = None
+    scheduled_end: datetime | None = None
+    milestone: bool = False
+    order_index: int
 
 
 class GoalSwitchRequest(BaseModel):
@@ -72,6 +87,14 @@ class GoalDagResponse(BaseModel):
     nodes: list[GoalDagNode]
     edges: list[GoalDagEdge]
     milestones: list[str]
+
+
+class GoalPlanPreviewResponse(BaseModel):
+    domain: str
+    deadline: datetime
+    summary: str
+    dag: GoalDagResponse
+    tasks: list[GoalPreviewTaskRead]
 
 
 class GoalRead(BaseModel):
