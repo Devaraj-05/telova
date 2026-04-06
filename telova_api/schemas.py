@@ -66,6 +66,15 @@ class CronRequest(BaseModel):
     auto_resolve: bool | None = None
 
 
+class AnalyticsQueryRequest(BaseModel):
+    user_id: str = Field(..., examples=["demo-user"])
+    question: str = Field(
+        ...,
+        examples=["Which goal has the highest deviation from plan?"],
+    )
+    limit: int = Field(default=10, ge=1, le=50)
+
+
 class GoalDagNode(BaseModel):
     key: str
     title: str
@@ -253,6 +262,54 @@ class ReadinessCheckRead(BaseModel):
     name: str
     status: str
     detail: str
+
+
+class AgentRunRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: str
+    user_id: str
+    goal_id: str | None = None
+    agent_name: str
+    operation: str
+    status: str
+    runtime: str
+    input_payload: dict[str, Any]
+    output_payload: dict[str, Any]
+    sql_text: str | None = None
+    started_at: datetime
+    completed_at: datetime
+
+
+class McpSyncLogRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: str
+    user_id: str
+    tool_name: str
+    operation: str
+    status: str
+    resource_type: str
+    goal_id: str | None = None
+    task_id: str | None = None
+    note_id: str | None = None
+    event_id: str | None = None
+    local_id: str | None = None
+    external_id: str | None = None
+    detail: str
+    payload_json: dict[str, Any]
+    created_at: datetime
+
+
+class AnalyticsQueryResponse(BaseModel):
+    question: str
+    summary: str
+    generated_sql: str
+    rows: list[dict[str, Any]]
+    row_count: int
+    execution_mode: str
+    source_objects: list[str]
+    fallback_reason: str | None = None
 
 
 class SystemStatusRead(BaseModel):

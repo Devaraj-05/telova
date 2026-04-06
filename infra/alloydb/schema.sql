@@ -84,12 +84,50 @@ CREATE TABLE IF NOT EXISTS replan_events (
     triggered_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
+CREATE TABLE IF NOT EXISTS agent_runs (
+    id TEXT PRIMARY KEY,
+    user_id TEXT NOT NULL,
+    goal_id TEXT,
+    agent_name TEXT NOT NULL,
+    operation TEXT NOT NULL,
+    status TEXT NOT NULL DEFAULT 'completed',
+    runtime TEXT NOT NULL DEFAULT 'deterministic',
+    input_payload JSONB NOT NULL DEFAULT '{}'::jsonb,
+    output_payload JSONB NOT NULL DEFAULT '{}'::jsonb,
+    sql_text TEXT,
+    started_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    completed_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS mcp_sync_logs (
+    id TEXT PRIMARY KEY,
+    user_id TEXT NOT NULL,
+    tool_name TEXT NOT NULL,
+    operation TEXT NOT NULL,
+    status TEXT NOT NULL DEFAULT 'synced',
+    resource_type TEXT NOT NULL DEFAULT 'record',
+    goal_id TEXT,
+    task_id TEXT,
+    note_id TEXT,
+    event_id TEXT,
+    local_id TEXT,
+    external_id TEXT,
+    detail TEXT NOT NULL DEFAULT '',
+    payload_json JSONB NOT NULL DEFAULT '{}'::jsonb,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
 CREATE INDEX IF NOT EXISTS idx_goals_user_id ON goals(user_id);
 CREATE INDEX IF NOT EXISTS idx_tasks_goal_id ON tasks(goal_id);
 CREATE INDEX IF NOT EXISTS idx_tasks_user_id ON tasks(user_id);
 CREATE INDEX IF NOT EXISTS idx_calendar_events_user_id ON calendar_events(user_id);
 CREATE INDEX IF NOT EXISTS idx_calendar_events_goal_id ON calendar_events(goal_id);
 CREATE INDEX IF NOT EXISTS idx_notes_user_id ON notes(user_id);
+CREATE INDEX IF NOT EXISTS idx_agent_runs_user_id ON agent_runs(user_id);
+CREATE INDEX IF NOT EXISTS idx_agent_runs_goal_id ON agent_runs(goal_id);
+CREATE INDEX IF NOT EXISTS idx_mcp_sync_logs_user_id ON mcp_sync_logs(user_id);
+CREATE INDEX IF NOT EXISTS idx_mcp_sync_logs_tool_name ON mcp_sync_logs(tool_name);
+CREATE INDEX IF NOT EXISTS idx_mcp_sync_logs_goal_id ON mcp_sync_logs(goal_id);
 
 CREATE INDEX IF NOT EXISTS idx_tasks_embedding_hnsw
 ON tasks USING hnsw (embedding vector_cosine_ops);

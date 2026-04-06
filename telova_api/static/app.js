@@ -421,6 +421,11 @@ async function handleUserMessage(text) {
     return;
   }
 
+  if (shouldUseDataAnalyst(text)) {
+    const handled = await answerWithDataAnalyst(text);
+    if (handled) return;
+  }
+
   addAssistantMessage({
     text: "I can help with goal planning, schedule questions, task progress, note capture, conflict scans, weekly reviews, and system sync status. Tell me what you want to achieve, or ask something like \"What should I do next?\"",
     actions: [
@@ -927,6 +932,82 @@ function answerSystem() {
     })),
   });
   renderAll();
+}
+
+async function answerWithDataAnalyst(text) {
+  showLoading("Querying the workspace", [
+    "Translating your question into SQL.",
+    "Checking goals, tasks, schedule, and agent activity.",
+  ]);
+
+  try {
+    const result = await fetchJson("/api/v1/analytics/query", {
+      method: "POST",
+      body: JSON.stringify({
+        user_id: state.userId,
+        question: text,
+        limit: 8,
+      }),
+    });
+
+    addAssistantMessage({
+      title: "Data analyst reply",
+      text: result.summary,
+      cards: buildAnalyticsCards(result),
+      actions: [
+        { action: "send-prompt", prompt: "What should I do next?", label: "What should I do next?", variant: "secondary" },
+        { action: "send-prompt", prompt: "Refresh workspace.", label: "Refresh workspace", variant: "secondary" },
+      ],
+    });
+    setStatus(`Answered with ${human(result.execution_mode)}`);
+    return true;
+  } catch (error) {
+    setStatus(readError(error));
+    return false;
+  } finally {
+    hideLoading();
+    renderAll();
+  }
+}
+
+function buildAnalyticsCards(result) {
+  const cards = [
+    {
+      title: "Query mode",
+      detail: `${human(result.execution_mode)} | ${result.row_count} row(s)`,
+    },
+  ];
+
+  if (result.source_objects?.length) {
+    cards.push({
+      title: "Source objects",
+      detail: result.source_objects.join(", "),
+    });
+  }
+
+  result.rows.slice(0, 4).forEach((row, index) => {
+    const entries = Object.entries(row);
+    const [firstKey, firstValue] = entries[0] || [`Row ${index + 1}`, ""];
+    const detail = entries
+      .slice(1, 4)
+      .map(([key, value]) => `${human(key)}: ${formatAnalyticsValue(value)}`)
+      .join(" | ");
+    cards.push({
+      title: `${human(firstKey)}: ${formatAnalyticsValue(firstValue)}`,
+      detail: detail || "Structured result row",
+    });
+  });
+
+  return cards;
+}
+
+function formatAnalyticsValue(value) {
+  if (value == null || value === "") return "None";
+  const parsed = new Date(value);
+  if (typeof value === "string" && !Number.isNaN(parsed.getTime()) && value.includes("T")) {
+    return formatDate(value);
+  }
+  return String(value);
 }
 
 async function runConflictScanInChat() {
@@ -1502,6 +1583,14 @@ function isNoteQuery(text) {
 
 function isSystemQuery(text) {
   return /\bsystem\b|\bsync\b|\bintegration\b|\bhealth\b|\bstatus of the app\b/.test(text.toLowerCase());
+}
+
+function shouldUseDataAnalyst(text) {
+  const lower = text.toLowerCase();
+  return (
+    looksLikeQuestion(text) ||
+    /\boverdue\b|\bat risk\b|\brisk\b|\bdeviation\b|\bhow many\b|\bwhich goal\b|\bwhich task\b|\bcompleted\b|\brecent agent\b/.test(lower)
+  );
 }
 
 function isNoteCaptureIntent(text) {

@@ -20,7 +20,8 @@ gcloud services enable \
   artifactregistry.googleapis.com \
   secretmanager.googleapis.com \
   cloudscheduler.googleapis.com \
-  alloydb.googleapis.com >/dev/null
+  alloydb.googleapis.com \
+  aiplatform.googleapis.com >/dev/null
 
 DEPLOY_ARGS=(
   run deploy "${SERVICE_NAME}"

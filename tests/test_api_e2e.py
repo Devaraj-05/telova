@@ -146,6 +146,61 @@ def test_notes_create_and_update_flow(client: TestClient):
     assert any(item["id"] == note["id"] for item in list_response.json())
 
 
+def test_analytics_and_telemetry_endpoints(client: TestClient):
+    create_response = client.post(
+        "/api/v1/goals",
+        json={
+            "user_id": "demo-user",
+            "goal": "Ship the Telova hackathon demo",
+            "description": "Need working analytics, telemetry, and deployment proof.",
+            "priority": "High",
+        },
+    )
+    assert create_response.status_code == 200
+    created = create_response.json()
+    assert created["goal"]["id"]
+
+    analytics_response = client.post(
+        "/api/v1/analytics/query",
+        json={
+            "user_id": "demo-user",
+            "question": "Which goal has the highest deviation from plan?",
+            "limit": 5,
+        },
+    )
+    assert analytics_response.status_code == 200
+    analytics = analytics_response.json()
+    assert analytics["generated_sql"]
+    assert analytics["row_count"] >= 1
+    assert analytics["execution_mode"] in {"deterministic_sql", "alloydb_ai_nl"}
+
+    agent_runs_response = client.get(
+        "/api/v1/agent-runs",
+        params={"user_id": "demo-user", "limit": 20},
+    )
+    assert agent_runs_response.status_code == 200
+    agent_runs = agent_runs_response.json()
+    assert any(item["operation"] == "create_goal_plan" for item in agent_runs)
+    assert any(item["operation"] == "analytics_query" for item in agent_runs)
+
+    sync_logs_response = client.get(
+        "/api/v1/sync-logs",
+        params={"user_id": "demo-user", "limit": 50},
+    )
+    assert sync_logs_response.status_code == 200
+    sync_logs = sync_logs_response.json()
+    assert sync_logs
+    assert any(item["tool_name"] == "calendar" for item in sync_logs)
+    assert any(item["tool_name"] == "tasks" for item in sync_logs)
+    assert any(item["tool_name"] == "notes" for item in sync_logs)
+
+    system_response = client.get("/api/v1/system/status", params={"user_id": "demo-user"})
+    assert system_response.status_code == 200
+    system = system_response.json()
+    assert any(agent["name"] == "Data Analyst" for agent in system["agents"])
+    assert any(check["name"] == "AlloyDB AI NL" for check in system["readiness"])
+
+
 def test_api_auth_middleware_enforces_api_key():
     secured = FastAPI()
     secured.add_middleware(

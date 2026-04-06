@@ -5,7 +5,8 @@ import logging
 from telova_api.config import Settings
 from telova_api.integrations.contracts import IntegrationStatus
 from telova_api.integrations.google_workspace import GoogleWorkspaceClientFactory
-from telova_api.models import ContextPackage, Note, NoteType, ReplanEvent
+from telova_api.models import ContextPackage, McpSyncLog, Note, NoteType, ReplanEvent
+from telova_api.repositories.analytics import McpSyncLogRepository
 from telova_api.repositories.notes import (
     ContextPackageRepository,
     NoteRepository,
@@ -24,10 +25,13 @@ class DatabaseNotesGateway:
         note_repo: NoteRepository,
         context_repo: ContextPackageRepository,
         replan_repo: ReplanRepository,
+        *,
+        sync_log_repo: McpSyncLogRepository | None = None,
     ) -> None:
         self.note_repo = note_repo
         self.context_repo = context_repo
         self.replan_repo = replan_repo
+        self.sync_log_repo = sync_log_repo
 
     async def create_context_package(
         self,
@@ -60,6 +64,17 @@ class DatabaseNotesGateway:
                 open_items=open_items,
             )
         )
+        await self._log_sync(
+            user_id=user_id,
+            operation="create_context_package",
+            status="stored",
+            resource_type="note",
+            goal_id=goal_id,
+            note_id=note.id,
+            local_id=note.id,
+            detail="Stored the context package in Telova memory.",
+            payload={"from_goal_id": from_goal_id, "to_goal_id": to_goal_id},
+        )
         return note, context_package
 
     async def create_status_report(
@@ -70,7 +85,7 @@ class DatabaseNotesGateway:
         title: str,
         content: str,
     ) -> Note:
-        return await self.note_repo.create_note(
+        note = await self.note_repo.create_note(
             Note(
                 user_id=user_id,
                 goal_id=goal_id,
@@ -80,6 +95,18 @@ class DatabaseNotesGateway:
                 metadata_json={},
             )
         )
+        await self._log_sync(
+            user_id=user_id,
+            operation="create_status_report",
+            status="stored",
+            resource_type="note",
+            goal_id=goal_id,
+            note_id=note.id,
+            local_id=note.id,
+            detail="Stored a status report in Telova memory.",
+            payload={"title": title},
+        )
+        return note
 
     async def create_manual_note(
         self,
@@ -90,7 +117,7 @@ class DatabaseNotesGateway:
         goal_id: str | None = None,
         note_type: str = NoteType.MANUAL.value,
     ) -> Note:
-        return await self.note_repo.create_note(
+        note = await self.note_repo.create_note(
             Note(
                 user_id=user_id,
                 goal_id=goal_id,
@@ -100,6 +127,18 @@ class DatabaseNotesGateway:
                 metadata_json={},
             )
         )
+        await self._log_sync(
+            user_id=user_id,
+            operation="create_manual_note",
+            status="stored",
+            resource_type="note",
+            goal_id=goal_id,
+            note_id=note.id,
+            local_id=note.id,
+            detail="Stored a manual note in Telova memory.",
+            payload={"title": title, "note_type": note_type},
+        )
+        return note
 
     async def update_note(
         self,
@@ -112,7 +151,19 @@ class DatabaseNotesGateway:
             note.title = title
         if content is not None:
             note.content = content
-        return await self.note_repo.save(note)
+        updated = await self.note_repo.save(note)
+        await self._log_sync(
+            user_id=updated.user_id,
+            operation="update_note",
+            status="stored",
+            resource_type="note",
+            goal_id=updated.goal_id,
+            note_id=updated.id,
+            local_id=updated.id,
+            detail="Updated a note in Telova memory.",
+            payload={"title": updated.title},
+        )
+        return updated
 
     async def list_user_notes(self, user_id: str, limit: int = 50) -> list[Note]:
         return await self.note_repo.list_by_user(user_id, limit=limit)
@@ -130,6 +181,38 @@ class DatabaseNotesGateway:
             backend="database",
         )
 
+    async def _log_sync(
+        self,
+        *,
+        user_id: str,
+        operation: str,
+        status: str,
+        resource_type: str,
+        goal_id: str | None = None,
+        note_id: str | None = None,
+        local_id: str | None = None,
+        external_id: str | None = None,
+        detail: str,
+        payload: dict,
+    ) -> None:
+        if self.sync_log_repo is None:
+            return
+        await self.sync_log_repo.create(
+            McpSyncLog(
+                user_id=user_id,
+                tool_name="notes",
+                operation=operation,
+                status=status,
+                resource_type=resource_type,
+                goal_id=goal_id,
+                note_id=note_id,
+                local_id=local_id,
+                external_id=external_id,
+                detail=detail,
+                payload_json=payload,
+            )
+        )
+
 
 class GoogleNotesGateway(DatabaseNotesGateway):
     def __init__(
@@ -140,8 +223,14 @@ class GoogleNotesGateway(DatabaseNotesGateway):
         *,
         workspace_factory: GoogleWorkspaceClientFactory,
         settings: Settings,
+        sync_log_repo: McpSyncLogRepository | None = None,
     ) -> None:
-        super().__init__(note_repo, context_repo, replan_repo)
+        super().__init__(
+            note_repo,
+            context_repo,
+            replan_repo,
+            sync_log_repo=sync_log_repo,
+        )
         self.workspace_factory = workspace_factory
         self.settings = settings
 
@@ -263,10 +352,33 @@ class GoogleNotesGateway(DatabaseNotesGateway):
             if remote_id:
                 note.external_note_id = remote_id
                 await self.note_repo.save(note)
+                await self._log_sync(
+                    user_id=note.user_id,
+                    operation="push_note_to_google_keep",
+                    status="synced",
+                    resource_type="note",
+                    goal_id=note.goal_id,
+                    note_id=note.id,
+                    local_id=note.id,
+                    external_id=remote_id,
+                    detail="Created the note in Google Keep.",
+                    payload={"note_type": note.note_type},
+                )
             if old_remote_id and old_remote_id != remote_id:
                 await self._delete_remote_note(note.user_id, old_remote_id)
         except Exception:
             logger.exception("Failed to sync note %s to Google Keep.", note.id)
+            await self._log_sync(
+                user_id=note.user_id,
+                operation="push_note_to_google_keep",
+                status="failed",
+                resource_type="note",
+                goal_id=note.goal_id,
+                note_id=note.id,
+                local_id=note.id,
+                detail="Failed to create the note in Google Keep.",
+                payload={"note_type": note.note_type},
+            )
 
     async def _delete_remote_note(self, user_id: str, remote_note_id: str) -> None:
         try:

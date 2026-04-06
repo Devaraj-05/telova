@@ -1,22 +1,25 @@
 ﻿from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timezone
 import asyncio
 import inspect
 
 from telova_api.agents.conflict_sentinel import ConflictAlert, ConflictSentinelAgent
 from telova_api.agents.context_bridge import ContextBridgeAgent
 from telova_api.agents.progress_adaptor import ProgressAdaptorAgent
+from telova_api.config import Settings
 from telova_api.integrations.calendar import DatabaseCalendarGateway
 from telova_api.integrations.notes import DatabaseNotesGateway
 from telova_api.integrations.tasks import DatabaseTaskGateway
-from telova_api.models import Goal, ReplanEvent, Task
+from telova_api.models import AgentRun, Goal, ReplanEvent, Task
+from telova_api.repositories.analytics import AgentRunRepository, McpSyncLogRepository
 from telova_api.repositories.calendar import CalendarEventRepository
 from telova_api.repositories.goals import GoalRepository
 from telova_api.repositories.notes import NoteRepository
 from telova_api.repositories.tasks import TaskRepository
 from telova_api.schemas import GoalCreateRequest
+from telova_api.services.data_analyst import ProductivityDataAnalystService
 from telova_api.services.planning_runtime import (
     DeterministicPlanningRuntime,
     GoogleAdkPlanningRuntime,
@@ -34,26 +37,34 @@ class TelovaOrchestratorService:
     def __init__(
         self,
         *,
+        settings: Settings,
         goal_repo: GoalRepository,
         task_repo: TaskRepository,
         calendar_repo: CalendarEventRepository,
         note_repo: NoteRepository,
+        agent_run_repo: AgentRunRepository,
+        sync_log_repo: McpSyncLogRepository,
         task_gateway: DatabaseTaskGateway,
         calendar_gateway: DatabaseCalendarGateway,
         notes_gateway: DatabaseNotesGateway,
+        data_analyst: ProductivityDataAnalystService,
         planning_runtime: DeterministicPlanningRuntime | GoogleAdkPlanningRuntime,
         conflict_sentinel: ConflictSentinelAgent,
         context_bridge: ContextBridgeAgent,
         progress_adaptor: ProgressAdaptorAgent,
         auto_resolve_conflicts: bool,
     ) -> None:
+        self.settings = settings
         self.goal_repo = goal_repo
         self.task_repo = task_repo
         self.calendar_repo = calendar_repo
         self.note_repo = note_repo
+        self.agent_run_repo = agent_run_repo
+        self.sync_log_repo = sync_log_repo
         self.task_gateway = task_gateway
         self.calendar_gateway = calendar_gateway
         self.notes_gateway = notes_gateway
+        self.data_analyst = data_analyst
         self.planning_runtime = planning_runtime
         self.conflict_sentinel = conflict_sentinel
         self.context_bridge = context_bridge
@@ -73,13 +84,30 @@ class TelovaOrchestratorService:
             ],
         )
         plan = await plan_result if inspect.isawaitable(plan_result) else plan_result
-        return {
+        preview = {
             "domain": plan.domain,
             "deadline": plan.deadline,
             "summary": self._build_preview_summary(request, plan),
             "dag": plan.dag,
             "tasks": plan.tasks,
         }
+        await self._record_agent_run(
+            user_id=request.user_id,
+            goal_id=None,
+            agent_name="Research",
+            operation="preview_goal_plan",
+            runtime=self.settings.agent_runtime,
+            input_payload={
+                "goal": request.goal,
+                "priority": request.priority,
+                "constraints": request.constraints,
+            },
+            output_payload={
+                "domain": preview["domain"],
+                "task_count": len(preview["tasks"]),
+            },
+        )
+        return preview
 
     async def create_goal_plan(self, request: GoalCreateRequest) -> tuple[Goal, dict, list[Task], list]:
         planning_description = self._compose_planning_description(request)
@@ -155,6 +183,23 @@ class TelovaOrchestratorService:
             goal_id=goal.id,
             title=f"Goal activated: {goal.title}",
             content=self._build_activation_note(goal.title, tasks),
+        )
+        await self._record_agent_run(
+            user_id=request.user_id,
+            goal_id=goal.id,
+            agent_name="Orchestrator",
+            operation="create_goal_plan",
+            runtime=self.settings.agent_runtime,
+            input_payload={
+                "goal": request.goal,
+                "priority": request.priority,
+                "constraints": request.constraints,
+            },
+            output_payload={
+                "task_count": len(tasks),
+                "calendar_event_count": len(events),
+                "domain": goal.domain,
+            },
         )
         return goal, goal.dag_json, tasks, events
 
@@ -251,8 +296,58 @@ class TelovaOrchestratorService:
         )
         return [status.__dict__ for status in statuses]
 
+    async def list_agent_runs(self, user_id: str, limit: int = 20) -> list[AgentRun]:
+        return await self.agent_run_repo.list_by_user(user_id, limit=limit)
+
+    async def list_sync_logs(self, user_id: str, limit: int = 50):
+        return await self.sync_log_repo.list_by_user(user_id, limit=limit)
+
+    async def query_productivity_data(
+        self,
+        *,
+        user_id: str,
+        question: str,
+        limit: int = 10,
+    ) -> dict:
+        try:
+            result = await self.data_analyst.answer_question(
+                user_id=user_id,
+                question=question,
+                limit=limit,
+            )
+        except Exception as exc:
+            await self._record_agent_run(
+                user_id=user_id,
+                goal_id=None,
+                agent_name="Data Analyst",
+                operation="analytics_query",
+                runtime="failed",
+                status="failed",
+                input_payload={"question": question, "limit": limit},
+                output_payload={"error": str(exc)},
+            )
+            raise
+
+        await self._record_agent_run(
+            user_id=user_id,
+            goal_id=None,
+            agent_name="Data Analyst",
+            operation="analytics_query",
+            runtime=result["execution_mode"],
+            input_payload={"question": question, "limit": limit},
+            output_payload={
+                "row_count": result["row_count"],
+                "source_objects": result["source_objects"],
+            },
+            sql_text=result["generated_sql"],
+        )
+        return result
+
     def describe_planning_runtime(self) -> dict:
         return self.planning_runtime.describe_status().__dict__
+
+    def describe_data_analyst(self) -> dict:
+        return self.data_analyst.describe_status()
 
     async def get_dashboard(self, user_id: str) -> dict:
         goals = await self.goal_repo.list_by_user(user_id)
@@ -286,7 +381,7 @@ class TelovaOrchestratorService:
             from_tasks=from_tasks,
             to_tasks=to_tasks,
         )
-        return await self.notes_gateway.create_context_package(
+        result = await self.notes_gateway.create_context_package(
             user_id=user_id,
             goal_id=to_goal.id,
             title=package.title,
@@ -295,6 +390,22 @@ class TelovaOrchestratorService:
             to_goal_id=to_goal.id,
             open_items=package.open_items,
         )
+        await self._record_agent_run(
+            user_id=user_id,
+            goal_id=to_goal.id,
+            agent_name="Memory",
+            operation="switch_goal_context",
+            runtime="context_bridge",
+            input_payload={
+                "from_goal_id": from_goal.id,
+                "to_goal_id": to_goal.id,
+            },
+            output_payload={
+                "open_item_count": len(package.open_items),
+                "summary": package.summary[:160],
+            },
+        )
+        return result
 
     async def run_conflict_scan(
         self,
@@ -352,6 +463,15 @@ class TelovaOrchestratorService:
                 ]
             alerts.extend(goal_alerts)
 
+        await self._record_agent_run(
+            user_id=user_id or "all-users",
+            goal_id=None,
+            agent_name="Scheduler",
+            operation="conflict_scan",
+            runtime="conflict_sentinel",
+            input_payload={"auto_resolve": should_auto_resolve},
+            output_payload={"alert_count": len(alerts)},
+        )
         return alerts
 
     async def run_weekly_review(
@@ -421,6 +541,18 @@ class TelovaOrchestratorService:
                 }
             )
 
+        await self._record_agent_run(
+            user_id=user_id or "all-users",
+            goal_id=None,
+            agent_name="Execution",
+            operation="weekly_review",
+            runtime="progress_adaptor",
+            input_payload={},
+            output_payload={
+                "review_count": len(reviews),
+                "replanned_count": sum(1 for item in reviews if item["replanned"]),
+            },
+        )
         return reviews
 
     def _hydrate_dag(self, dag: dict, tasks: list[Task]) -> dict:
@@ -532,4 +664,34 @@ class TelovaOrchestratorService:
         if milestones:
             lines.append(f"Key checkpoints: {', '.join(milestones)}.")
         return " ".join(lines)
+
+    async def _record_agent_run(
+        self,
+        *,
+        user_id: str,
+        goal_id: str | None,
+        agent_name: str,
+        operation: str,
+        runtime: str,
+        input_payload: dict,
+        output_payload: dict,
+        status: str = "completed",
+        sql_text: str | None = None,
+    ) -> None:
+        now = datetime.now(timezone.utc)
+        await self.agent_run_repo.create(
+            AgentRun(
+                user_id=user_id,
+                goal_id=goal_id,
+                agent_name=agent_name,
+                operation=operation,
+                status=status,
+                runtime=runtime,
+                input_payload=input_payload,
+                output_payload=output_payload,
+                sql_text=sql_text,
+                started_at=now,
+                completed_at=now,
+            )
+        )
 

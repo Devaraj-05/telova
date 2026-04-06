@@ -41,7 +41,8 @@ gcloud services enable \
   artifactregistry.googleapis.com \
   secretmanager.googleapis.com \
   cloudscheduler.googleapis.com \
-  alloydb.googleapis.com
+  alloydb.googleapis.com \
+  aiplatform.googleapis.com
 ```
 
 ## 3. Provision AlloyDB
@@ -52,6 +53,7 @@ Create or reuse an AlloyDB cluster and instance, then capture:
 - `ALLOYDB_DATABASE`
 - `ALLOYDB_USER`
 - either `ALLOYDB_PASSWORD_SECRET` or IAM auth
+- optional AlloyDB AI NL config id, for example `telova_nl`
 
 Telova supports both:
 
@@ -67,8 +69,20 @@ Important:
 - The Cloud Run runtime service account should have at least:
   - `roles/secretmanager.secretAccessor`
   - `roles/alloydb.client`
+  - `roles/aiplatform.user`
   - `roles/serviceusage.serviceUsageConsumer`
 - If you enable `ALLOYDB_ENABLE_IAM_AUTH=true`, also grant the runtime service account `roles/alloydb.databaseUser`.
+
+## 3a. Enable AlloyDB AI natural language for Telova
+
+Apply the Telova schema and AI NL bootstrap assets after the database exists:
+
+```bash
+psql "${DATABASE_URL}" -f infra/alloydb/schema.sql
+psql "${DATABASE_URL}" -f infra/alloydb/telova_ai_nl_setup.sql
+```
+
+The second file creates curated secure views plus the `telova_nl` configuration, templates, and fragments used by the Data Analyst agent.
 
 ## 4. Create Secret Manager secrets
 
@@ -110,6 +124,8 @@ Edit `infra/gcp/cloudrun.env.yaml` and set:
 - `ALLOYDB_DATABASE`
 - `ALLOYDB_USER`
 - `ALLOYDB_PASSWORD_SECRET` or `ALLOYDB_ENABLE_IAM_AUTH=true`
+- `ALLOYDB_AI_NL_ENABLED=true` when the AI NL setup SQL has been applied
+- `ALLOYDB_AI_NL_CONFIG_ID=telova_nl`
 - `GOOGLE_WORKSPACE_AUTH_MODE`
 - `GOOGLE_WORKSPACE_SERVICE_ACCOUNT_SECRET` or the authorized-user secret field
 - `API_KEY_SECRET`
@@ -119,6 +135,7 @@ Notes:
 
 - Leave `GOOGLE_KEEP_ENABLED=false` unless you explicitly have Keep access in your Workspace environment.
 - You can deploy first with `CLOUD_RUN_SERVICE_URL` blank, then update it after the first deployment.
+- If you want Gemini on Vertex AI for ADK planning, also keep `GOOGLE_GENAI_USE_VERTEXAI=true`, `GOOGLE_CLOUD_PROJECT`, and `GOOGLE_CLOUD_LOCATION` in the environment.
 
 ## 6. Run migrations and smoke test in Cloud Shell
 
@@ -228,3 +245,4 @@ Recommended checks after deploy:
 - `infra/gcp/create-scheduler-jobs.sh`
 - `infra/gcp/upsert-secret.sh`
 - `infra/alloydb/schema.sql`
+- `infra/alloydb/telova_ai_nl_setup.sql`

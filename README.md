@@ -7,6 +7,7 @@ Telova is a multi-agent command center that converts a high-level goal into a wo
 - FastAPI backend with async SQLAlchemy persistence and Alembic migrations.
 - Command-center UI with welcome, dashboard, goal creation, AI plan graph, calendar, task board, replan, notes, and system status screens.
 - Agent runtime support for deterministic local planning and optional Google ADK / Gemini-backed planning.
+- AlloyDB-ready data analyst capability that turns natural-language productivity questions into SQL and stores agent/sync telemetry for the hackathon track.
 - Integration gateways for database mode and Google-backed Calendar, Tasks, and optional Keep sync.
 - Production middleware for API auth, rate limiting, structured logging, readiness reporting, and optional Sentry.
 - End-to-end API tests plus Cloud Run / Cloud Scheduler deployment assets in `infra/gcp`.
@@ -60,3 +61,4 @@ Use the runbook in [docs/gcp-deployment.md](docs/gcp-deployment.md). The short v
 - [Architecture and HLD / LLD](docs/hld-lld.md)
 - [Build journal](docs/build-journal.md)
 - [GCP deployment guide](docs/gcp-deployment.md)
+- [AlloyDB hackathon setup](docs/alloydb-hackathon.md)

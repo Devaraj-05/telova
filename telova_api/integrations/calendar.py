@@ -6,8 +6,9 @@ import logging
 from telova_api.config import Settings
 from telova_api.integrations.contracts import IntegrationStatus
 from telova_api.integrations.google_workspace import GoogleWorkspaceClientFactory
-from telova_api.models import CalendarEvent, EventSource, Goal, Task
+from telova_api.models import CalendarEvent, EventSource, Goal, McpSyncLog, Task
 from telova_api.repositories.calendar import CalendarEventRepository
+from telova_api.repositories.analytics import McpSyncLogRepository
 
 
 logger = logging.getLogger(__name__)
@@ -16,8 +17,14 @@ CALENDAR_SCOPES = ["https://www.googleapis.com/auth/calendar"]
 
 
 class DatabaseCalendarGateway:
-    def __init__(self, calendar_repo: CalendarEventRepository) -> None:
+    def __init__(
+        self,
+        calendar_repo: CalendarEventRepository,
+        *,
+        sync_log_repo: McpSyncLogRepository | None = None,
+    ) -> None:
         self.calendar_repo = calendar_repo
+        self.sync_log_repo = sync_log_repo
 
     async def materialize_task_block(self, goal: Goal, task: Task) -> CalendarEvent:
         event = CalendarEvent(
@@ -34,7 +41,20 @@ class DatabaseCalendarGateway:
                 "goal_title": goal.title,
             },
         )
-        return await self.calendar_repo.create(event)
+        created = await self.calendar_repo.create(event)
+        await self._log_sync(
+            user_id=goal.user_id,
+            operation="materialize_task_block",
+            status="stored",
+            resource_type="calendar_event",
+            goal_id=goal.id,
+            task_id=task.id,
+            event_id=created.id,
+            local_id=created.id,
+            detail="Stored Telova task block in the local calendar cache.",
+            payload={"title": task.title, "source": created.source},
+        )
+        return created
 
     async def create_external_event(
         self,
@@ -58,7 +78,20 @@ class DatabaseCalendarGateway:
             end_at=end_at,
             metadata_json={"origin": "dashboard"},
         )
-        return await self.calendar_repo.create(event)
+        created = await self.calendar_repo.create(event)
+        await self._log_sync(
+            user_id=user_id,
+            operation="create_external_event",
+            status="stored",
+            resource_type="calendar_event",
+            goal_id=goal_id,
+            task_id=task_id,
+            event_id=created.id,
+            local_id=created.id,
+            detail="Stored external event in the Telova calendar cache.",
+            payload={"title": title, "source": created.source},
+        )
+        return created
 
     async def list_upcoming(
         self,
@@ -99,7 +132,23 @@ class DatabaseCalendarGateway:
         metadata = dict(event.metadata_json or {})
         metadata["last_reschedule_reason"] = reason
         event.metadata_json = metadata
-        return await self.calendar_repo.save(event)
+        updated = await self.calendar_repo.save(event)
+        await self._log_sync(
+            user_id=updated.user_id,
+            operation="reschedule_task_block",
+            status="stored",
+            resource_type="calendar_event",
+            goal_id=updated.goal_id,
+            task_id=updated.task_id,
+            event_id=updated.id,
+            local_id=updated.id,
+            detail=reason,
+            payload={
+                "start_at": updated.start_at.isoformat(),
+                "end_at": updated.end_at.isoformat(),
+            },
+        )
+        return updated
 
     async def describe_status(self, user_id: str) -> IntegrationStatus:
         del user_id
@@ -111,6 +160,40 @@ class DatabaseCalendarGateway:
             backend="database",
         )
 
+    async def _log_sync(
+        self,
+        *,
+        user_id: str,
+        operation: str,
+        status: str,
+        resource_type: str,
+        goal_id: str | None = None,
+        task_id: str | None = None,
+        event_id: str | None = None,
+        local_id: str | None = None,
+        external_id: str | None = None,
+        detail: str,
+        payload: dict,
+    ) -> None:
+        if self.sync_log_repo is None:
+            return
+        await self.sync_log_repo.create(
+            McpSyncLog(
+                user_id=user_id,
+                tool_name="calendar",
+                operation=operation,
+                status=status,
+                resource_type=resource_type,
+                goal_id=goal_id,
+                task_id=task_id,
+                event_id=event_id,
+                local_id=local_id,
+                external_id=external_id,
+                detail=detail,
+                payload_json=payload,
+            )
+        )
+
 
 class GoogleCalendarGateway(DatabaseCalendarGateway):
     def __init__(
@@ -119,8 +202,9 @@ class GoogleCalendarGateway(DatabaseCalendarGateway):
         *,
         workspace_factory: GoogleWorkspaceClientFactory,
         settings: Settings,
+        sync_log_repo: McpSyncLogRepository | None = None,
     ) -> None:
-        super().__init__(calendar_repo)
+        super().__init__(calendar_repo, sync_log_repo=sync_log_repo)
         self.workspace_factory = workspace_factory
         self.settings = settings
 
@@ -157,8 +241,33 @@ class GoogleCalendarGateway(DatabaseCalendarGateway):
             if remote_id:
                 event.external_event_id = remote_id
                 await self.calendar_repo.save(event)
+                await self._log_sync(
+                    user_id=goal.user_id,
+                    operation="push_task_block_to_google_calendar",
+                    status="synced",
+                    resource_type="calendar_event",
+                    goal_id=goal.id,
+                    task_id=task.id,
+                    event_id=event.id,
+                    local_id=event.id,
+                    external_id=remote_id,
+                    detail="Created the Telova task block in Google Calendar.",
+                    payload={"calendar_id": self.settings.google_calendar_id},
+                )
         except Exception:
             logger.exception("Failed to sync Telova task block to Google Calendar.")
+            await self._log_sync(
+                user_id=goal.user_id,
+                operation="push_task_block_to_google_calendar",
+                status="failed",
+                resource_type="calendar_event",
+                goal_id=goal.id,
+                task_id=task.id,
+                event_id=event.id,
+                local_id=event.id,
+                detail="Failed to create the Telova task block in Google Calendar.",
+                payload={"calendar_id": self.settings.google_calendar_id},
+            )
         return event
 
     async def create_external_event(
@@ -208,8 +317,33 @@ class GoogleCalendarGateway(DatabaseCalendarGateway):
             if remote_id:
                 event.external_event_id = remote_id
                 await self.calendar_repo.save(event)
+                await self._log_sync(
+                    user_id=user_id,
+                    operation="push_external_event_to_google_calendar",
+                    status="synced",
+                    resource_type="calendar_event",
+                    goal_id=goal_id,
+                    task_id=task_id,
+                    event_id=event.id,
+                    local_id=event.id,
+                    external_id=remote_id,
+                    detail="Created the external event in Google Calendar.",
+                    payload={"calendar_id": self.settings.google_calendar_id},
+                )
         except Exception:
             logger.exception("Failed to create external event in Google Calendar.")
+            await self._log_sync(
+                user_id=user_id,
+                operation="push_external_event_to_google_calendar",
+                status="failed",
+                resource_type="calendar_event",
+                goal_id=goal_id,
+                task_id=task_id,
+                event_id=event.id,
+                local_id=event.id,
+                detail="Failed to create the external event in Google Calendar.",
+                payload={"calendar_id": self.settings.google_calendar_id},
+            )
         return event
 
     async def list_upcoming(
@@ -278,8 +412,34 @@ class GoogleCalendarGateway(DatabaseCalendarGateway):
                 )
                 .execute(),
             )
+            await self._log_sync(
+                user_id=updated.user_id,
+                operation="reschedule_google_calendar_event",
+                status="synced",
+                resource_type="calendar_event",
+                goal_id=updated.goal_id,
+                task_id=updated.task_id,
+                event_id=updated.id,
+                local_id=updated.id,
+                external_id=updated.external_event_id,
+                detail=reason,
+                payload={"calendar_id": self.settings.google_calendar_id},
+            )
         except Exception:
             logger.exception("Failed to reschedule Google Calendar event %s.", event.id)
+            await self._log_sync(
+                user_id=updated.user_id,
+                operation="reschedule_google_calendar_event",
+                status="failed",
+                resource_type="calendar_event",
+                goal_id=updated.goal_id,
+                task_id=updated.task_id,
+                event_id=updated.id,
+                local_id=updated.id,
+                external_id=updated.external_event_id,
+                detail="Failed to reschedule the Google Calendar event.",
+                payload={"calendar_id": self.settings.google_calendar_id},
+            )
         return updated
 
     async def describe_status(self, user_id: str) -> IntegrationStatus:

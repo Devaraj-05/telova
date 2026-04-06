@@ -8,7 +8,8 @@ from telova_api.integrations.google_workspace import (
     GoogleWorkspaceClientFactory,
     GoogleWorkspaceConfigurationError,
 )
-from telova_api.models import Goal, Task, TaskStatus
+from telova_api.models import Goal, McpSyncLog, Task, TaskStatus
+from telova_api.repositories.analytics import McpSyncLogRepository
 from telova_api.repositories.tasks import TaskRepository
 
 
@@ -18,8 +19,14 @@ TASKS_SCOPES = ["https://www.googleapis.com/auth/tasks"]
 
 
 class DatabaseTaskGateway:
-    def __init__(self, task_repo: TaskRepository) -> None:
+    def __init__(
+        self,
+        task_repo: TaskRepository,
+        *,
+        sync_log_repo: McpSyncLogRepository | None = None,
+    ) -> None:
         self.task_repo = task_repo
+        self.sync_log_repo = sync_log_repo
 
     async def list_goal_tasks(self, goal_id: str) -> list[Task]:
         return await self.task_repo.list_by_goal(goal_id)
@@ -28,13 +35,36 @@ class DatabaseTaskGateway:
         return await self.task_repo.list_by_user(user_id)
 
     async def update_status(self, task: Task, status: str) -> Task:
-        return await self.task_repo.update_status(task, status)
+        updated = await self.task_repo.update_status(task, status)
+        await self._log_sync(
+            user_id=updated.user_id,
+            operation="update_task_status",
+            status="stored",
+            resource_type="task",
+            goal_id=updated.goal_id,
+            task_id=updated.id,
+            local_id=updated.id,
+            detail=f"Updated Telova task status to {updated.status}.",
+            payload={"status": updated.status},
+        )
+        return updated
 
     async def save(self, task: Task) -> Task:
         return await self.task_repo.save(task)
 
     async def sync_generated_tasks(self, goal: Goal, tasks: list[Task]) -> list[Task]:
-        del goal
+        for task in tasks:
+            await self._log_sync(
+                user_id=goal.user_id,
+                operation="materialize_generated_task",
+                status="stored",
+                resource_type="task",
+                goal_id=goal.id,
+                task_id=task.id,
+                local_id=task.id,
+                detail="Stored the generated task in Telova.",
+                payload={"title": task.title, "phase": task.phase},
+            )
         return tasks
 
     async def describe_status(self, user_id: str) -> IntegrationStatus:
@@ -47,6 +77,38 @@ class DatabaseTaskGateway:
             backend="database",
         )
 
+    async def _log_sync(
+        self,
+        *,
+        user_id: str,
+        operation: str,
+        status: str,
+        resource_type: str,
+        goal_id: str | None = None,
+        task_id: str | None = None,
+        local_id: str | None = None,
+        external_id: str | None = None,
+        detail: str,
+        payload: dict,
+    ) -> None:
+        if self.sync_log_repo is None:
+            return
+        await self.sync_log_repo.create(
+            McpSyncLog(
+                user_id=user_id,
+                tool_name="tasks",
+                operation=operation,
+                status=status,
+                resource_type=resource_type,
+                goal_id=goal_id,
+                task_id=task_id,
+                local_id=local_id,
+                external_id=external_id,
+                detail=detail,
+                payload_json=payload,
+            )
+        )
+
 
 class GoogleTaskGateway(DatabaseTaskGateway):
     def __init__(
@@ -55,8 +117,9 @@ class GoogleTaskGateway(DatabaseTaskGateway):
         *,
         workspace_factory: GoogleWorkspaceClientFactory,
         settings: Settings,
+        sync_log_repo: McpSyncLogRepository | None = None,
     ) -> None:
-        super().__init__(task_repo)
+        super().__init__(task_repo, sync_log_repo=sync_log_repo)
         self.workspace_factory = workspace_factory
         self.settings = settings
         self._tasklist_cache: dict[str, str] = {}
@@ -106,8 +169,31 @@ class GoogleTaskGateway(DatabaseTaskGateway):
                 if remote_task_id:
                     task.external_task_id = remote_task_id
                     await self.task_repo.save(task)
+                    await self._log_sync(
+                        user_id=goal.user_id,
+                        operation="push_task_to_google_tasks",
+                        status="synced",
+                        resource_type="task",
+                        goal_id=goal.id,
+                        task_id=task.id,
+                        local_id=task.id,
+                        external_id=remote_task_id,
+                        detail="Created the task in Google Tasks.",
+                        payload={"tasklist_id": tasklist_id},
+                    )
             except Exception:
                 logger.exception("Failed to sync task %s to Google Tasks.", task.id)
+                await self._log_sync(
+                    user_id=goal.user_id,
+                    operation="push_task_to_google_tasks",
+                    status="failed",
+                    resource_type="task",
+                    goal_id=goal.id,
+                    task_id=task.id,
+                    local_id=task.id,
+                    detail="Failed to create the task in Google Tasks.",
+                    payload={"tasklist_id": tasklist_id},
+                )
         return tasks
 
     async def describe_status(self, user_id: str) -> IntegrationStatus:
@@ -179,6 +265,18 @@ class GoogleTaskGateway(DatabaseTaskGateway):
             )
             if task.status != desired_status:
                 await self.task_repo.update_status(task, desired_status)
+                await self._log_sync(
+                    user_id=user_id,
+                    operation="pull_task_status_from_google_tasks",
+                    status="synced",
+                    resource_type="task",
+                    goal_id=task.goal_id,
+                    task_id=task.id,
+                    local_id=task.id,
+                    external_id=task.external_task_id,
+                    detail="Refreshed the task status from Google Tasks.",
+                    payload={"status": desired_status},
+                )
 
     async def _push_status(self, task: Task) -> None:
         if not self.workspace_factory.is_configured() or not task.external_task_id:
@@ -205,8 +303,32 @@ class GoogleTaskGateway(DatabaseTaskGateway):
                 )
                 .execute(),
             )
+            await self._log_sync(
+                user_id=task.user_id,
+                operation="push_task_status_to_google_tasks",
+                status="synced",
+                resource_type="task",
+                goal_id=task.goal_id,
+                task_id=task.id,
+                local_id=task.id,
+                external_id=task.external_task_id,
+                detail="Updated the task status in Google Tasks.",
+                payload={"status": task.status},
+            )
         except Exception:
             logger.exception("Failed to push task status to Google Tasks.")
+            await self._log_sync(
+                user_id=task.user_id,
+                operation="push_task_status_to_google_tasks",
+                status="failed",
+                resource_type="task",
+                goal_id=task.goal_id,
+                task_id=task.id,
+                local_id=task.id,
+                external_id=task.external_task_id,
+                detail="Failed to update the task status in Google Tasks.",
+                payload={"status": task.status},
+            )
 
     async def _resolve_tasklist_id(self, user_id: str) -> str:
         if self.settings.google_tasks_tasklist_id:
