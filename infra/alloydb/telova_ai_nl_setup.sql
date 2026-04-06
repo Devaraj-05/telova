@@ -10,6 +10,11 @@ BEGIN
     END;
 END $$;
 
+-- Telova uses explicit parameterization metadata below to avoid setup-time
+-- LLM checks where possible. Google's current AlloyDB AI natural language
+-- docs still describe the managed NL endpoint as gemini-2.0-flash, which is
+-- separate from Telova's application-side Gemini model configuration.
+
 CREATE OR REPLACE VIEW public.telova_goal_execution_view AS
 SELECT
     g.id AS goal_id,
@@ -141,7 +146,14 @@ BEGIN
             sql => $sql$SELECT goal_title, overdue_tasks, blocked_tasks, deviation, deadline
                          FROM public.telova_goal_execution_secure
                          WHERE goal_status = 'active' AND overdue_tasks > 0
-                         ORDER BY overdue_tasks DESC, deadline ASC$sql$
+                         ORDER BY overdue_tasks DESC, deadline ASC$sql$,
+            parameterized_sql => $sql$SELECT goal_title, overdue_tasks, blocked_tasks, deviation, deadline
+                         FROM public.telova_goal_execution_secure
+                         WHERE goal_status = 'active' AND overdue_tasks > 0
+                         ORDER BY overdue_tasks DESC, deadline ASC$sql$,
+            parameterized_intent => 'Which active goals have overdue tasks?',
+            manifest => 'Which active goals have overdue tasks?',
+            check_intent => FALSE
         );
     EXCEPTION
         WHEN OTHERS THEN
@@ -156,7 +168,15 @@ BEGIN
                          FROM public.telova_schedule_pressure_secure
                          WHERE scheduled_start >= date_trunc('day', NOW())
                            AND scheduled_start < date_trunc('day', NOW()) + interval '1 day'
-                         ORDER BY scheduled_start ASC$sql$
+                         ORDER BY scheduled_start ASC$sql$,
+            parameterized_sql => $sql$SELECT goal_title, task_title, phase, task_status, scheduled_start, scheduled_end
+                         FROM public.telova_schedule_pressure_secure
+                         WHERE scheduled_start >= date_trunc('day', NOW())
+                           AND scheduled_start < date_trunc('day', NOW()) + interval '1 day'
+                         ORDER BY scheduled_start ASC$sql$,
+            parameterized_intent => 'What is due today?',
+            manifest => 'What is due today?',
+            check_intent => FALSE
         );
     EXCEPTION
         WHEN OTHERS THEN
@@ -170,7 +190,14 @@ BEGIN
             sql => $sql$SELECT goal_title, task_title, phase, task_status, scheduled_end
                          FROM public.telova_schedule_pressure_secure
                          WHERE is_blocked = TRUE
-                         ORDER BY scheduled_end ASC NULLS LAST$sql$
+                         ORDER BY scheduled_end ASC NULLS LAST$sql$,
+            parameterized_sql => $sql$SELECT goal_title, task_title, phase, task_status, scheduled_end
+                         FROM public.telova_schedule_pressure_secure
+                         WHERE is_blocked = TRUE
+                         ORDER BY scheduled_end ASC NULLS LAST$sql$,
+            parameterized_intent => 'Which tasks are blocked?',
+            manifest => 'Which tasks are blocked?',
+            check_intent => FALSE
         );
     EXCEPTION
         WHEN OTHERS THEN
@@ -184,7 +211,14 @@ BEGIN
             sql => $sql$SELECT goal_title, domain, deviation, deadline, overdue_tasks, blocked_tasks
                          FROM public.telova_goal_execution_secure
                          ORDER BY deviation DESC, overdue_tasks DESC
-                         LIMIT 5$sql$
+                         LIMIT 5$sql$,
+            parameterized_sql => $sql$SELECT goal_title, domain, deviation, deadline, overdue_tasks, blocked_tasks
+                         FROM public.telova_goal_execution_secure
+                         ORDER BY deviation DESC, overdue_tasks DESC
+                         LIMIT 5$sql$,
+            parameterized_intent => 'Which goal has the highest deviation from plan?',
+            manifest => 'Which goal has the highest deviation from plan?',
+            check_intent => FALSE
         );
     EXCEPTION
         WHEN OTHERS THEN
@@ -198,7 +232,14 @@ BEGIN
             sql => $sql$SELECT agent_name, operation, status, runtime, started_at, sync_operation, sync_status
                          FROM public.telova_agent_activity_secure
                          ORDER BY started_at DESC
-                         LIMIT 10$sql$
+                         LIMIT 10$sql$,
+            parameterized_sql => $sql$SELECT agent_name, operation, status, runtime, started_at, sync_operation, sync_status
+                         FROM public.telova_agent_activity_secure
+                         ORDER BY started_at DESC
+                         LIMIT 10$sql$,
+            parameterized_intent => 'What did the agents do recently?',
+            manifest => 'What did the agents do recently?',
+            check_intent => FALSE
         );
     EXCEPTION
         WHEN OTHERS THEN
@@ -210,9 +251,13 @@ BEGIN
             nl_config_id => 'telova_nl',
             table_aliases => ARRAY['public.telova_schedule_pressure_secure AS T'],
             intent => 'tasks due tomorrow',
+            parameterized_intent => 'tasks due tomorrow',
             fragment => $sql$T.scheduled_start >= date_trunc('day', NOW()) + interval '1 day'
                             AND T.scheduled_start < date_trunc('day', NOW()) + interval '2 day'$sql$,
-            check_intent => TRUE
+            parameterized_fragment => $sql$T.scheduled_start >= date_trunc('day', NOW()) + interval '1 day'
+                            AND T.scheduled_start < date_trunc('day', NOW()) + interval '2 day'$sql$,
+            manifest => 'tasks due tomorrow',
+            check_intent => FALSE
         );
     EXCEPTION
         WHEN OTHERS THEN
@@ -224,8 +269,11 @@ BEGIN
             nl_config_id => 'telova_nl',
             table_aliases => ARRAY['public.telova_goal_execution_secure AS T'],
             intent => 'goals at risk',
+            parameterized_intent => 'goals at risk',
             fragment => $sql$T.deviation >= 0.20 OR T.overdue_tasks > 0 OR T.blocked_tasks > 0$sql$,
-            check_intent => TRUE
+            parameterized_fragment => $sql$T.deviation >= 0.20 OR T.overdue_tasks > 0 OR T.blocked_tasks > 0$sql$,
+            manifest => 'goals at risk',
+            check_intent => FALSE
         );
     EXCEPTION
         WHEN OTHERS THEN
@@ -237,8 +285,11 @@ BEGIN
             nl_config_id => 'telova_nl',
             table_aliases => ARRAY['public.telova_schedule_pressure_secure AS T'],
             intent => 'completed tasks',
+            parameterized_intent => 'completed tasks',
             fragment => $sql$T.task_status = 'done'$sql$,
-            check_intent => TRUE
+            parameterized_fragment => $sql$T.task_status = 'done'$sql$,
+            manifest => 'completed tasks',
+            check_intent => FALSE
         );
     EXCEPTION
         WHEN OTHERS THEN

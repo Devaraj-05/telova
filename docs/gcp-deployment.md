@@ -130,12 +130,14 @@ Edit `infra/gcp/cloudrun.env.yaml` and set:
 - `GOOGLE_WORKSPACE_SERVICE_ACCOUNT_SECRET` or the authorized-user secret field
 - `API_KEY_SECRET`
 - `CRON_SHARED_TOKEN_SECRET`
+- `ADK_MODEL=gemini-2.5-flash` if you enable the Google ADK runtime
 
 Notes:
 
 - Leave `GOOGLE_KEEP_ENABLED=false` unless you explicitly have Keep access in your Workspace environment.
 - You can deploy first with `CLOUD_RUN_SERVICE_URL` blank, then update it after the first deployment.
 - If you want Gemini on Vertex AI for ADK planning, also keep `GOOGLE_GENAI_USE_VERTEXAI=true`, `GOOGLE_CLOUD_PROJECT`, and `GOOGLE_CLOUD_LOCATION` in the environment.
+- Telova's own Vertex AI runtime can use `gemini-2.5-flash`, but AlloyDB AI natural language is currently documented by Google as using `gemini-2.0-flash:generateContent` for `g_create_configuration()`. If you need strict `2.5+` model usage for app-side generation, use Telova's Google ADK / Gemini runtime and treat AlloyDB AI NL as an optional database-native feature.
 
 ## 6. Run migrations and smoke test in Cloud Shell
 

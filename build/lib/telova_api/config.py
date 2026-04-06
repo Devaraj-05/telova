@@ -150,7 +150,7 @@ def get_settings() -> Settings:
         google_keep_enabled=_as_bool(
             os.getenv("GOOGLE_KEEP_ENABLED", "false")
         ),
-        adk_model=os.getenv("ADK_MODEL", "gemini-2.0-flash"),
+        adk_model=os.getenv("ADK_MODEL", "gemini-2.5-flash"),
         adk_app_name=os.getenv("ADK_APP_NAME", "telova"),
         api_auth_mode=os.getenv("API_AUTH_MODE", "disabled"),
         api_key=os.getenv("API_KEY") or None,

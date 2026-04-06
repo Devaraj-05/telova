@@ -12,6 +12,8 @@ Telova is a multi-agent command center that converts a high-level goal into a wo
 - Production middleware for API auth, rate limiting, structured logging, readiness reporting, and optional Sentry.
 - End-to-end API tests plus Cloud Run / Cloud Scheduler deployment assets in `infra/gcp`.
 
+By default, Telova's application-side Gemini runtime uses `gemini-2.5-flash`. One important exception is AlloyDB AI natural language itself: Google's current documentation still describes that feature's `nl_config` endpoint as `gemini-2.0-flash:generateContent`, so treat that as a managed platform constraint rather than a Telova app setting.
+
 ## Local setup in VS Code
 
 ```bash
