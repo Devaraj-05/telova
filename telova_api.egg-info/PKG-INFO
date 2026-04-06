@@ -17,6 +17,7 @@ Requires-Dist: pytest-asyncio; extra == "dev"
 Provides-Extra: gcp
 Requires-Dist: google-cloud-alloydb-connector[asyncpg]; extra == "gcp"
 Requires-Dist: asyncpg; extra == "gcp"
+Requires-Dist: google-genai; extra == "gcp"
 Requires-Dist: google-api-python-client; extra == "gcp"
 Requires-Dist: google-auth-httplib2; extra == "gcp"
 Requires-Dist: google-auth-oauthlib; extra == "gcp"
@@ -36,9 +37,12 @@ Telova is a multi-agent command center that converts a high-level goal into a wo
 - FastAPI backend with async SQLAlchemy persistence and Alembic migrations.
 - Command-center UI with welcome, dashboard, goal creation, AI plan graph, calendar, task board, replan, notes, and system status screens.
 - Agent runtime support for deterministic local planning and optional Google ADK / Gemini-backed planning.
+- AlloyDB-ready data analyst capability that turns natural-language productivity questions into SQL and stores agent/sync telemetry for the hackathon track.
 - Integration gateways for database mode and Google-backed Calendar, Tasks, and optional Keep sync.
 - Production middleware for API auth, rate limiting, structured logging, readiness reporting, and optional Sentry.
 - End-to-end API tests plus Cloud Run / Cloud Scheduler deployment assets in `infra/gcp`.
+
+By default, Telova's application-side Gemini runtime uses `gemini-2.5-flash`. One important exception is AlloyDB AI natural language itself: Google's current documentation still describes that feature's `nl_config` endpoint as `gemini-2.0-flash:generateContent`, so treat that as a managed platform constraint rather than a Telova app setting. If you want a strict `2.5+` data path, disable `ALLOYDB_AI_NL_ENABLED` and use Telova's app-side Gemini SQL analyst against AlloyDB.
 
 ## Local setup in VS Code
 
@@ -89,3 +93,4 @@ Use the runbook in [docs/gcp-deployment.md](docs/gcp-deployment.md). The short v
 - [Architecture and HLD / LLD](docs/hld-lld.md)
 - [Build journal](docs/build-journal.md)
 - [GCP deployment guide](docs/gcp-deployment.md)
+- [AlloyDB hackathon setup](docs/alloydb-hackathon.md)

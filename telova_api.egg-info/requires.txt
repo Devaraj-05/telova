@@ -16,6 +16,7 @@ pytest-asyncio
 [gcp]
 google-cloud-alloydb-connector[asyncpg]
 asyncpg
+google-genai
 google-api-python-client
 google-auth-httplib2
 google-auth-oauthlib
