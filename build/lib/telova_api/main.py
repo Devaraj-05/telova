@@ -14,16 +14,22 @@ from telova_api.db import close_db, get_session, init_db
 from telova_api.logging_utils import configure_logging
 from telova_api.monitoring import configure_monitoring
 from telova_api.schemas import (
+    AgentRunRead,
     AgentHealthRead,
+    AnalyticsQueryRequest,
+    AnalyticsQueryResponse,
     CalendarEventCreateRequest,
     CalendarEventRead,
     ConflictAlertRead,
     ContextPackageRead,
     CronRequest,
+    McpSyncLogRead,
     DashboardRead,
     GoalCreateRequest,
     GoalDagResponse,
+    GoalPlanPreviewResponse,
     GoalPlanResponse,
+    GoalPreviewTaskRead,
     GoalRead,
     GoalSwitchRequest,
     NoteCreateRequest,
@@ -144,6 +150,24 @@ async def create_goal(
     )
 
 
+@app.post("/api/v1/goals/preview", response_model=GoalPlanPreviewResponse)
+async def preview_goal(
+    payload: GoalCreateRequest,
+    orchestrator=Depends(get_orchestrator),
+):
+    preview = await orchestrator.preview_goal_plan(payload)
+    return GoalPlanPreviewResponse(
+        domain=preview["domain"],
+        deadline=preview["deadline"],
+        summary=preview["summary"],
+        dag=GoalDagResponse.model_validate(preview["dag"]),
+        tasks=[
+            GoalPreviewTaskRead.model_validate(task)
+            for task in preview["tasks"]
+        ],
+    )
+
+
 @app.get("/api/v1/goals/{goal_id}", response_model=GoalRead)
 async def get_goal(goal_id: str, orchestrator=Depends(get_orchestrator)):
     goal = await orchestrator.get_goal(goal_id)
@@ -213,6 +237,37 @@ async def list_tasks(
     orchestrator=Depends(get_orchestrator),
 ):
     return await orchestrator.list_tasks(user_id)
+
+
+@app.post("/api/v1/analytics/query", response_model=AnalyticsQueryResponse)
+async def analytics_query(
+    payload: AnalyticsQueryRequest,
+    orchestrator=Depends(get_orchestrator),
+):
+    result = await orchestrator.query_productivity_data(
+        user_id=payload.user_id,
+        question=payload.question,
+        limit=payload.limit,
+    )
+    return AnalyticsQueryResponse.model_validate(result)
+
+
+@app.get("/api/v1/agent-runs", response_model=list[AgentRunRead])
+async def list_agent_runs(
+    user_id: str = Query(default=settings.default_user_id),
+    limit: int = Query(default=20, ge=1, le=100),
+    orchestrator=Depends(get_orchestrator),
+):
+    return await orchestrator.list_agent_runs(user_id, limit=limit)
+
+
+@app.get("/api/v1/sync-logs", response_model=list[McpSyncLogRead])
+async def list_sync_logs(
+    user_id: str = Query(default=settings.default_user_id),
+    limit: int = Query(default=50, ge=1, le=200),
+    orchestrator=Depends(get_orchestrator),
+):
+    return await orchestrator.list_sync_logs(user_id, limit=limit)
 
 
 @app.get("/api/v1/notes", response_model=list[NoteRead])
@@ -320,6 +375,7 @@ async def system_status(
     )
     integration_statuses = await orchestrator.describe_integrations(user_id)
     planning_runtime = orchestrator.describe_planning_runtime()
+    data_analyst = orchestrator.describe_data_analyst()
 
     alloydb_ready = bool(
         settings.alloydb_instance_name
@@ -338,6 +394,11 @@ async def system_status(
     )
     secret_manager_ready = bool(
         settings.use_secret_manager and settings.gcp_project_id
+    )
+    alloydb_ai_ready = bool(
+        settings.alloydb_ai_nl_enabled
+        and settings.alloydb_ai_nl_config_id
+        and (alloydb_ready or postgres_ready)
     )
     adk_ready = bool(
         not settings.is_google_adk_runtime
@@ -406,6 +467,13 @@ async def system_status(
                 detail="Evaluating task completion and re-plan thresholds.",
                 load_label=f"{sum(1 for task in tasks if task.status == 'done')} completed",
             ),
+            AgentHealthRead(
+                name="Data Analyst",
+                role="AlloyDB natural-language query layer",
+                status=data_analyst["status"],
+                detail=data_analyst["detail"],
+                load_label="NL-to-SQL ready",
+            ),
         ],
         connections=[
             *[
@@ -441,6 +509,16 @@ async def system_status(
                     "Conflict scan and weekly review schedules are configured."
                     if scheduler_ready
                     else "Cron jobs are not fully configured for production yet."
+                ),
+            ),
+            ToolConnectionRead(
+                name="AlloyDB AI NL",
+                kind="NL-SQL",
+                status="connected" if alloydb_ai_ready else "warning",
+                detail=(
+                    f"Using AlloyDB AI natural language config {settings.alloydb_ai_nl_config_id}."
+                    if alloydb_ai_ready
+                    else "Enable AlloyDB AI natural language and set ALLOYDB_AI_NL_CONFIG_ID."
                 ),
             ),
         ],
@@ -496,6 +574,15 @@ async def system_status(
                     f"Agent runtime is set to {settings.agent_runtime}."
                     if adk_ready
                     else "Provide ADK model settings and install google-adk."
+                ),
+            ),
+            ReadinessCheckRead(
+                name="AlloyDB AI NL",
+                status="ready" if alloydb_ai_ready else "pending",
+                detail=(
+                    f"AlloyDB AI natural language is configured with {settings.alloydb_ai_nl_config_id}."
+                    if alloydb_ai_ready
+                    else "Enable ALLOYDB_AI_NL_ENABLED and provision the AlloyDB AI NL config."
                 ),
             ),
             ReadinessCheckRead(

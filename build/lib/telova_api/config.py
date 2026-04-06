@@ -33,6 +33,8 @@ class Settings:
     alloydb_refresh_strategy: str
     alloydb_ip_type: str | None
     alloydb_enable_iam_auth: bool
+    alloydb_ai_nl_enabled: bool
+    alloydb_ai_nl_config_id: str
     google_workspace_auth_mode: str
     google_workspace_subject: str | None
     google_workspace_authorized_user_json: str | None
@@ -119,6 +121,13 @@ def get_settings() -> Settings:
         alloydb_ip_type=os.getenv("ALLOYDB_IP_TYPE") or None,
         alloydb_enable_iam_auth=_as_bool(
             os.getenv("ALLOYDB_ENABLE_IAM_AUTH", "false")
+        ),
+        alloydb_ai_nl_enabled=_as_bool(
+            os.getenv("ALLOYDB_AI_NL_ENABLED", "false")
+        ),
+        alloydb_ai_nl_config_id=os.getenv(
+            "ALLOYDB_AI_NL_CONFIG_ID",
+            "telova_nl",
         ),
         google_workspace_auth_mode=os.getenv(
             "GOOGLE_WORKSPACE_AUTH_MODE",

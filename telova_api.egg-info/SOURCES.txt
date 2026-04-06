@@ -32,11 +32,13 @@ telova_api/mcp_servers/calendar_server.py
 telova_api/mcp_servers/notes_server.py
 telova_api/mcp_servers/tasks_server.py
 telova_api/repositories/__init__.py
+telova_api/repositories/analytics.py
 telova_api/repositories/calendar.py
 telova_api/repositories/goals.py
 telova_api/repositories/notes.py
 telova_api/repositories/tasks.py
 telova_api/services/__init__.py
+telova_api/services/data_analyst.py
 telova_api/services/factory.py
 telova_api/services/orchestrator.py
 telova_api/services/planning_runtime.py

@@ -43,6 +43,19 @@ class NoteType(StrEnum):
     MANUAL = "manual"
 
 
+class AgentRunStatus(StrEnum):
+    COMPLETED = "completed"
+    FAILED = "failed"
+    RUNNING = "running"
+
+
+class SyncStatus(StrEnum):
+    STORED = "stored"
+    SYNCED = "synced"
+    WARNING = "warning"
+    FAILED = "failed"
+
+
 class Goal(Base):
     __tablename__ = "goals"
 
@@ -194,6 +207,58 @@ class ReplanEvent(Base):
     new_dag: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
     summary: Mapped[str] = mapped_column(Text)
     triggered_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=utcnow,
+    )
+
+
+class AgentRun(Base):
+    __tablename__ = "agent_runs"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
+    user_id: Mapped[str] = mapped_column(String(128), index=True)
+    goal_id: Mapped[str | None] = mapped_column(String(36), index=True, default=None)
+    agent_name: Mapped[str] = mapped_column(String(80))
+    operation: Mapped[str] = mapped_column(String(120))
+    status: Mapped[str] = mapped_column(
+        String(20),
+        default=AgentRunStatus.COMPLETED.value,
+    )
+    runtime: Mapped[str] = mapped_column(String(80), default="deterministic")
+    input_payload: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
+    output_payload: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
+    sql_text: Mapped[str | None] = mapped_column(Text, default=None)
+    started_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=utcnow,
+    )
+    completed_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=utcnow,
+    )
+
+
+class McpSyncLog(Base):
+    __tablename__ = "mcp_sync_logs"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
+    user_id: Mapped[str] = mapped_column(String(128), index=True)
+    tool_name: Mapped[str] = mapped_column(String(40), index=True)
+    operation: Mapped[str] = mapped_column(String(120))
+    status: Mapped[str] = mapped_column(
+        String(20),
+        default=SyncStatus.SYNCED.value,
+    )
+    resource_type: Mapped[str] = mapped_column(String(40), default="record")
+    goal_id: Mapped[str | None] = mapped_column(String(36), index=True, default=None)
+    task_id: Mapped[str | None] = mapped_column(String(36), index=True, default=None)
+    note_id: Mapped[str | None] = mapped_column(String(36), index=True, default=None)
+    event_id: Mapped[str | None] = mapped_column(String(36), index=True, default=None)
+    local_id: Mapped[str | None] = mapped_column(String(128), default=None)
+    external_id: Mapped[str | None] = mapped_column(String(255), default=None)
+    detail: Mapped[str] = mapped_column(Text, default="")
+    payload_json: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
+    created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         default=utcnow,
     )
