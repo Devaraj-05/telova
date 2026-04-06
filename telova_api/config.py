@@ -11,6 +11,13 @@ def _as_bool(value: str, default: bool = False) -> bool:
     return value.strip().lower() in {"1", "true", "yes", "on"}
 
 
+def _split_csv(value: str | None, default: tuple[str, ...] = ()) -> tuple[str, ...]:
+    if value is None:
+        return default
+    items = tuple(part.strip() for part in value.split(",") if part.strip())
+    return items or default
+
+
 @dataclass(frozen=True)
 class Settings:
     app_name: str
@@ -63,6 +70,7 @@ class Settings:
     json_logs: bool
     enable_access_logs: bool
     sentry_dsn: str | None
+    cors_allow_origins: tuple[str, ...]
     cloud_run_service_url: str | None
     cloud_scheduler_location: str | None
     cloud_scheduler_service_account: str | None
@@ -197,6 +205,10 @@ def get_settings() -> Settings:
             default=True,
         ),
         sentry_dsn=os.getenv("SENTRY_DSN") or None,
+        cors_allow_origins=_split_csv(
+            os.getenv("CORS_ALLOW_ORIGINS"),
+            default=("http://127.0.0.1:3000", "http://localhost:3000"),
+        ),
         cloud_run_service_url=os.getenv("CLOUD_RUN_SERVICE_URL") or None,
         cloud_scheduler_location=os.getenv("CLOUD_SCHEDULER_LOCATION") or None,
         cloud_scheduler_service_account=os.getenv(

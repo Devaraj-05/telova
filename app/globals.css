@@ -1,0 +1,43 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  color-scheme: dark;
+}
+
+html,
+body {
+  height: 100%;
+}
+
+body {
+  @apply bg-canvas bg-workspace-glow text-text antialiased;
+}
+
+* {
+  scrollbar-width: thin;
+  scrollbar-color: #23314f transparent;
+}
+
+*::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+*::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+*::-webkit-scrollbar-thumb {
+  background: #23314f;
+  border-radius: 999px;
+}
+
+.card-surface {
+  @apply rounded-3xl border border-border bg-card/90 shadow-panel backdrop-blur;
+}
+
+.card-surface-soft {
+  @apply rounded-2xl border border-border bg-cardSoft/85;
+}

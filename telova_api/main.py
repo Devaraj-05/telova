@@ -5,8 +5,9 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from fastapi import Depends, FastAPI, HTTPException, Query
-from fastapi.responses import FileResponse
+from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
+from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from telova_api.config import get_settings
@@ -68,7 +69,7 @@ cron_token = secret_resolver.resolve_text(
     secret_name=settings.cron_shared_token_secret,
     label="cron token",
 )
-STATIC_DIR = Path(__file__).parent / "static"
+FRONTEND_DIST_DIR = Path(__file__).resolve().parent.parent / "out"
 
 
 @asynccontextmanager
@@ -100,17 +101,16 @@ app.add_middleware(
     limit=settings.rate_limit_requests,
     window_seconds=settings.rate_limit_window_seconds,
 )
-
-app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
-
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=list(settings.cors_allow_origins),
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 async def get_orchestrator(session: AsyncSession = Depends(get_session)):
     return build_orchestrator(session)
-
-
-@app.get("/", include_in_schema=False)
-async def root():
-    return FileResponse(STATIC_DIR / "index.html")
 
 
 @app.get("/health")
@@ -605,4 +605,25 @@ async def system_status(
             ),
         ],
     )
+
+
+if FRONTEND_DIST_DIR.exists():
+    app.mount(
+        "/",
+        StaticFiles(directory=FRONTEND_DIST_DIR, html=True),
+        name="frontend",
+    )
+else:
+
+    @app.get("/", include_in_schema=False)
+    async def frontend_not_built():
+        return JSONResponse(
+            status_code=503,
+            content={
+                "detail": (
+                    "Frontend build not found. Run `npm run build` to export the "
+                    "Next.js app into ./out before serving it from FastAPI."
+                )
+            },
+        )
 
