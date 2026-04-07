@@ -1,14 +1,13 @@
 "use client";
 
 import Link from "next/link";
-import { Menu, PanelRight, Plus } from "lucide-react";
+import { Menu, Plus } from "lucide-react";
 
 interface WorkspaceHeaderProps {
   sessionStatus: string;
   runtimeStatus: string;
   onNewGoal: () => void;
   onToggleSidebar: () => void;
-  onToggleInsights: () => void;
 }
 
 export function WorkspaceHeader({
@@ -16,7 +15,6 @@ export function WorkspaceHeader({
   runtimeStatus,
   onNewGoal,
   onToggleSidebar,
-  onToggleInsights,
 }: WorkspaceHeaderProps) {
   return (
     <header className="flex h-[72px] items-center justify-between border-b border-border px-6">
@@ -24,7 +22,7 @@ export function WorkspaceHeader({
         <button
           type="button"
           onClick={onToggleSidebar}
-          className="inline-flex rounded-2xl border border-border bg-white/5 p-2 text-muted transition hover:text-text xl:hidden"
+          className="inline-flex rounded-2xl border border-border bg-white/5 p-2 text-muted transition hover:text-text md:hidden"
           aria-label="Open navigation"
         >
           <Menu className="size-4" />
@@ -62,14 +60,6 @@ export function WorkspaceHeader({
         >
           Open Dashboard
         </Link>
-        <button
-          type="button"
-          onClick={onToggleInsights}
-          className="inline-flex rounded-2xl border border-border bg-white/5 p-2 text-muted transition hover:text-text xl:hidden"
-          aria-label="Open insights"
-        >
-          <PanelRight className="size-4" />
-        </button>
       </div>
     </header>
   );
