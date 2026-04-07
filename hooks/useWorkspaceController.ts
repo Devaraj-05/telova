@@ -490,8 +490,14 @@ export function useWorkspaceController(userId: string | null) {
     }
 
     if (mode === "goal") {
-      await handleStartGoalFlow(value);
-      return;
+      // Heuristic: If it's a very short greeting, don't trigger the heavy goal planner
+      const lower = value.toLowerCase();
+      if (lower === "hi" || lower === "hello" || lower === "hey" || lower.length < 4) {
+        // Fall through to the raw chat below
+      } else {
+        await handleStartGoalFlow(value);
+        return;
+      }
     }
 
     // Fallback: Send raw chat message to Vertex AI if we are just chatting
