@@ -18,6 +18,8 @@ logger = logging.getLogger("telova.access")
 def _auth_header_token(request: Request) -> str | None:
     header = request.headers.get("Authorization", "").strip()
     if not header:
+        header = request.headers.get("X-Authorization", "").strip()
+    if not header:
         return None
     parts = header.split(" ", maxsplit=1)
     if len(parts) != 2:
