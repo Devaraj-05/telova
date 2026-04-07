@@ -4,7 +4,7 @@ import asyncio
 from datetime import datetime, timezone
 import json
 from typing import Any
-from urllib.parse import urlencode, urlparse
+from urllib.parse import parse_qs, urlencode, urlparse, urlunparse
 
 from fastapi import HTTPException
 from starlette.requests import Request
@@ -99,15 +99,6 @@ class UserAuthService:
             mode=normalized_mode,
             include_keep=include_keep,
         )
-        state_token = create_oauth_state_token(
-            payload={
-                "mode": normalized_mode,
-                "frontend_redirect_uri": redirect_uri,
-                "user_id": user.id if user else None,
-                "scopes": scopes,
-            },
-            secret=self.settings.auth_token_secret,
-        )
 
         client_config = self._resolve_google_oauth_client_config()
         callback_uri = str(request.url_for("google_oauth_callback"))
@@ -123,12 +114,34 @@ class UserAuthService:
                 ),
             ) from exc
 
-        flow = Flow.from_client_config(client_config, scopes=scopes, state=state_token)
+        # 1. Create flow and generate auth URL to obtain a PKCE code_verifier.
+        flow = Flow.from_client_config(client_config, scopes=scopes)
         flow.redirect_uri = callback_uri
         authorization_url, _ = flow.authorization_url(
             access_type="offline",
             include_granted_scopes="true",
             prompt="consent",
+        )
+
+        # 2. Build state token that includes the PKCE code_verifier so we can
+        #    restore it when the callback arrives on a new Flow instance.
+        state_token = create_oauth_state_token(
+            payload={
+                "mode": normalized_mode,
+                "frontend_redirect_uri": redirect_uri,
+                "user_id": user.id if user else None,
+                "scopes": scopes,
+                "code_verifier": getattr(flow, "code_verifier", None),
+            },
+            secret=self.settings.auth_token_secret,
+        )
+
+        # 3. Replace the auto-generated state param in the URL with our signed token.
+        parsed = urlparse(authorization_url)
+        params = parse_qs(parsed.query, keep_blank_values=True)
+        params["state"] = [state_token]
+        authorization_url = urlunparse(
+            parsed._replace(query=urlencode(params, doseq=True))
         )
         return authorization_url
 
@@ -155,6 +168,14 @@ class UserAuthService:
 
         flow = Flow.from_client_config(client_config, scopes=scopes, state=state_token)
         flow.redirect_uri = str(request.url_for("google_oauth_callback"))
+
+        # Restore the PKCE code_verifier that was stored in the state token
+        # during create_google_authorization_url, so fetch_token can present
+        # the verifier to Google and complete the exchange.
+        code_verifier = state.get("code_verifier")
+        if code_verifier:
+            flow.code_verifier = code_verifier
+
         await asyncio.to_thread(
             flow.fetch_token,
             authorization_response=str(request.url),

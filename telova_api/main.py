@@ -1,4 +1,4 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
@@ -235,6 +235,15 @@ async def google_oauth_callback(
         if error_redirect:
             return RedirectResponse(url=error_redirect, status_code=302)
         raise
+    except Exception as exc:
+        error_redirect = auth_service.build_google_error_redirect(
+            state_token=state,
+            error="oauth_callback_failed",
+            error_description=str(exc) or "Unexpected error during Google authorization.",
+        )
+        if error_redirect:
+            return RedirectResponse(url=error_redirect, status_code=302)
+        raise HTTPException(status_code=500, detail=str(exc))
 
     return RedirectResponse(url=redirect_url, status_code=302)
 

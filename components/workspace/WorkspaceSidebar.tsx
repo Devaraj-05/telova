@@ -40,8 +40,8 @@ interface WorkspaceSidebarProps {
 
 export function WorkspaceSidebar({
   activeItem,
-  userName = "Devaraj Padma",
-  userEmail = "devaraj@telova.ai",
+  userName = "User",
+  userEmail = "user@telova.ai",
   mobile = false,
   onLogout,
   onClose,

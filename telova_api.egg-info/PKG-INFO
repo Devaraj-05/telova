@@ -30,12 +30,12 @@ Requires-Dist: sentry-sdk; extra == "prod"
 
 # Telova
 
-Telova is a multi-agent command center that converts a high-level goal into a working execution system across tasks, schedules, notes, re-planning, and tool integrations. The repo is built for local development in VS Code and a production handoff to Google Cloud Run with AlloyDB, Secret Manager, Cloud Scheduler, and Google Workspace integrations.
+Telova is a multi-agent command center that converts a high-level goal into a working execution system across tasks, schedules, notes, re-planning, and tool integrations. The repo now uses a modern Next.js + TypeScript + Tailwind workspace frontend alongside the FastAPI backend, and it is built for local development in VS Code plus a production handoff to Google Cloud Run with AlloyDB, Secret Manager, Cloud Scheduler, and Google Workspace integrations.
 
 ## What ships in this repo
 
 - FastAPI backend with async SQLAlchemy persistence and Alembic migrations.
-- Command-center UI with welcome, dashboard, goal creation, AI plan graph, calendar, task board, replan, notes, and system status screens.
+- Next.js App Router frontend with a dark 3-column Agent Workspace, rich chat cards, right-side insight rail, and placeholder routes for dashboard, timeline, notes, replans, agents, and settings.
 - Agent runtime support for deterministic local planning and optional Google ADK / Gemini-backed planning.
 - AlloyDB-ready data analyst capability that turns natural-language productivity questions into SQL and stores agent/sync telemetry for the hackathon track.
 - Integration gateways for database mode and Google-backed Calendar, Tasks, and optional Keep sync.
@@ -46,6 +46,8 @@ By default, Telova's application-side Gemini runtime uses `gemini-2.5-flash`. On
 
 ## Local setup in VS Code
 
+Run the backend and frontend as two local processes.
+
 ```bash
 python -m venv .venv
 .venv\Scripts\activate
@@ -54,10 +56,34 @@ copy .env.example .env
 uvicorn telova_api.main:app --reload
 ```
 
+In a second terminal:
+
+```bash
+copy .env.local.example .env.local
+npm install
+npm run dev
+```
+
 Open:
 
-- `http://127.0.0.1:8000`
+- `http://127.0.0.1:3000/workspace`
 - `http://127.0.0.1:8000/docs`
+
+The frontend talks to FastAPI through `NEXT_PUBLIC_API_BASE_URL`, which defaults to `http://127.0.0.1:8000`. FastAPI also allows local Next.js CORS origins by default through `CORS_ALLOW_ORIGINS`.
+
+## Production frontend serving
+
+The repo is now Next.js-only for frontend. The legacy static UI has been removed.
+
+For production, build the frontend first:
+
+```bash
+npm run build
+```
+
+That exports the Next.js app into `./out`. FastAPI serves that built frontend directly in production when the `out` directory exists.
+
+If `out` is missing and you open `http://127.0.0.1:8000/`, FastAPI returns a helpful `503` response telling you to run `npm run build`.
 
 ## Optional production extras
 
@@ -72,7 +98,8 @@ pip install ".[gcp,adk,prod]"
 ```bash
 python -m compileall telova_api tests
 python -m pytest tests
-node --check telova_api/static/app.js
+npm run typecheck
+npm run build
 ```
 
 ## Google Cloud Shell to Cloud Run

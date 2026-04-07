@@ -1,6 +1,7 @@
 README.md
 pyproject.toml
 telova_api/__init__.py
+telova_api/auth.py
 telova_api/config.py
 telova_api/db.py
 telova_api/logging_utils.py
@@ -35,9 +36,12 @@ telova_api/repositories/__init__.py
 telova_api/repositories/analytics.py
 telova_api/repositories/calendar.py
 telova_api/repositories/goals.py
+telova_api/repositories/google_connections.py
 telova_api/repositories/notes.py
 telova_api/repositories/tasks.py
+telova_api/repositories/users.py
 telova_api/services/__init__.py
+telova_api/services/auth_service.py
 telova_api/services/data_analyst.py
 telova_api/services/factory.py
 telova_api/services/orchestrator.py
