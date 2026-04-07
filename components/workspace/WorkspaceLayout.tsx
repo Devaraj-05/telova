@@ -11,11 +11,9 @@ import { ChatScrollArea } from "@/components/workspace/ChatScrollArea";
 import { PromptComposer } from "@/components/workspace/PromptComposer";
 import { useWorkspaceController } from "@/hooks/useWorkspaceController";
 
-const DISMISSED_KEY = "telova_google_prompt_dismissed";
-
 export function WorkspaceLayout() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
-  const [connectPromptDismissed, setConnectPromptDismissed] = useState(true); // default hidden
+  const [connectPromptDismissed, setConnectPromptDismissed] = useState(false); // default to showing it
   const [isConnectingGoogle, setIsConnectingGoogle] = useState(false);
   const [connectPromptError, setConnectPromptError] = useState<string | null>(null);
   const {
@@ -25,15 +23,6 @@ export function WorkspaceLayout() {
     connectGoogleWorkspace,
   } = useAuth();
   const workspace = useWorkspaceController(user?.id ?? null);
-
-  // Show the modal only once — on first login if not previously dismissed
-  useEffect(() => {
-    if (typeof window === "undefined") return;
-    const wasDismissed = localStorage.getItem(DISMISSED_KEY);
-    if (!wasDismissed && user && googleConnection?.status !== "connected") {
-      setConnectPromptDismissed(false);
-    }
-  }, [user, googleConnection?.status]);
 
   useEffect(() => {
     if (googleConnection?.status === "connected") {
@@ -45,14 +34,12 @@ export function WorkspaceLayout() {
   const dismissModal = () => {
     setConnectPromptDismissed(true);
     setConnectPromptError(null);
-    if (typeof window !== "undefined") {
-      localStorage.setItem(DISMISSED_KEY, "1");
-    }
   };
 
   const showGoogleModal =
     user &&
-    googleConnection?.status !== "connected" &&
+    googleConnection &&
+    googleConnection.status !== "connected" &&
     !connectPromptDismissed;
 
   return (

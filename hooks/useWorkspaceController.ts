@@ -477,6 +477,8 @@ export function useWorkspaceController(userId: string | null) {
     }
 
     if (mode === "editing" && draft) {
+      pushMessages([createUserMessage(value)]);
+      setIsBusy(true);
       await handleGeneratePreview(
         {
           ...draft,
@@ -487,7 +489,13 @@ export function useWorkspaceController(userId: string | null) {
       return;
     }
 
-    // Send to Vertex AI chat agent
+    if (mode === "goal") {
+      await handleStartGoalFlow(value);
+      return;
+    }
+
+    // Fallback: Send raw chat message to Vertex AI if we are just chatting
+    // (though in Telova, most interactions should be structured through the goal flow)
     pushMessages([createUserMessage(value)]);
     setIsBusy(true);
     setChatHistory((prev) => [...prev, { role: "user", content: value }]);
