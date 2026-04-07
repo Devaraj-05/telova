@@ -6,6 +6,20 @@ from typing import Any
 from pydantic import BaseModel, ConfigDict, Field
 
 
+class ChatMessageItem(BaseModel):
+    role: str = Field(..., examples=["user"])
+    content: str = Field(..., examples=["Hi"])
+
+
+class ChatRequest(BaseModel):
+    message: str = Field(..., examples=["Help me plan a product launch in 30 days."])
+    history: list[ChatMessageItem] = Field(default_factory=list)
+
+
+class ChatResponse(BaseModel):
+    reply: str
+
+
 class GoalCreateRequest(BaseModel):
     user_id: str = Field(..., examples=["demo-user"])
     goal: str = Field(..., examples=["Get promoted to Senior Engineer in 6 months"])

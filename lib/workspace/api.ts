@@ -54,3 +54,19 @@ export function createGoalPlan(payload: GoalCreatePayload) {
     body: JSON.stringify(payload),
   });
 }
+
+export interface ChatHistoryItem {
+  role: "user" | "assistant";
+  content: string;
+}
+
+export async function sendChatMessage(
+  message: string,
+  history: ChatHistoryItem[] = [],
+): Promise<string> {
+  const res = await apiRequest<{ reply: string }>("/api/v1/auth/chat", {
+    method: "POST",
+    body: JSON.stringify({ message, history }),
+  });
+  return res.reply;
+}

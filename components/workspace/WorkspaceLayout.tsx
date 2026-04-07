@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 
 import { useAuth } from "@/components/auth/AuthProvider";
-import { GoogleConnectionPrompt } from "@/components/workspace/GoogleConnectionPrompt";
+import { GoogleConnectionModal } from "@/components/workspace/GoogleConnectionModal";
 import { WorkspaceSidebar } from "@/components/workspace/WorkspaceSidebar";
 import { WorkspaceMain } from "@/components/workspace/WorkspaceMain";
 import { WorkspaceHeader } from "@/components/workspace/WorkspaceHeader";
@@ -11,9 +11,11 @@ import { ChatScrollArea } from "@/components/workspace/ChatScrollArea";
 import { PromptComposer } from "@/components/workspace/PromptComposer";
 import { useWorkspaceController } from "@/hooks/useWorkspaceController";
 
+const DISMISSED_KEY = "telova_google_prompt_dismissed";
+
 export function WorkspaceLayout() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
-  const [connectPromptDismissed, setConnectPromptDismissed] = useState(false);
+  const [connectPromptDismissed, setConnectPromptDismissed] = useState(true); // default hidden
   const [isConnectingGoogle, setIsConnectingGoogle] = useState(false);
   const [connectPromptError, setConnectPromptError] = useState<string | null>(null);
   const {
@@ -24,20 +26,37 @@ export function WorkspaceLayout() {
   } = useAuth();
   const workspace = useWorkspaceController(user?.id ?? null);
 
+  // Show the modal only once — on first login if not previously dismissed
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const wasDismissed = localStorage.getItem(DISMISSED_KEY);
+    if (!wasDismissed && user && googleConnection?.status !== "connected") {
+      setConnectPromptDismissed(false);
+    }
+  }, [user, googleConnection?.status]);
+
   useEffect(() => {
     if (googleConnection?.status === "connected") {
-      setConnectPromptDismissed(false);
+      setConnectPromptDismissed(true);
       setConnectPromptError(null);
     }
   }, [googleConnection?.status]);
 
-  const showGooglePrompt =
+  const dismissModal = () => {
+    setConnectPromptDismissed(true);
+    setConnectPromptError(null);
+    if (typeof window !== "undefined") {
+      localStorage.setItem(DISMISSED_KEY, "1");
+    }
+  };
+
+  const showGoogleModal =
     user &&
     googleConnection?.status !== "connected" &&
     !connectPromptDismissed;
 
   return (
-    <div className="flex h-screen bg-canvas text-text">
+    <div className="flex h-screen overflow-hidden bg-canvas text-text">
       <div className="hidden md:block">
         <WorkspaceSidebar
           activeItem="workspace"
@@ -80,32 +99,6 @@ export function WorkspaceLayout() {
         chat={
           <div className="flex min-h-0 flex-1">
             <section className="flex min-w-0 flex-1 flex-col">
-              {showGooglePrompt ? (
-                <GoogleConnectionPrompt
-                  connection={googleConnection}
-                  error={connectPromptError}
-                  isConnecting={isConnectingGoogle}
-                  onConnect={async () => {
-                    setIsConnectingGoogle(true);
-                    setConnectPromptError(null);
-                    try {
-                      await connectGoogleWorkspace();
-                    } catch (error) {
-                      setConnectPromptError(
-                        error instanceof Error
-                          ? error.message
-                          : "Unable to start Google authorization.",
-                      );
-                    } finally {
-                      setIsConnectingGoogle(false);
-                    }
-                  }}
-                  onDismiss={() => {
-                    setConnectPromptDismissed(true);
-                    setConnectPromptError(null);
-                  }}
-                />
-              ) : null}
               <ChatScrollArea
                 messages={workspace.messages}
                 welcomePrompts={workspace.welcomePrompts}
@@ -127,6 +120,30 @@ export function WorkspaceLayout() {
           />
         }
       />
+
+      {showGoogleModal ? (
+        <GoogleConnectionModal
+          connection={googleConnection}
+          error={connectPromptError}
+          isConnecting={isConnectingGoogle}
+          onConnect={async () => {
+            setIsConnectingGoogle(true);
+            setConnectPromptError(null);
+            try {
+              await connectGoogleWorkspace();
+            } catch (error) {
+              setConnectPromptError(
+                error instanceof Error
+                  ? error.message
+                  : "Unable to start Google authorization.",
+              );
+            } finally {
+              setIsConnectingGoogle(false);
+            }
+          }}
+          onDismiss={dismissModal}
+        />
+      ) : null}
     </div>
   );
 }

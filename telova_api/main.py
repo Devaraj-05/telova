@@ -27,6 +27,8 @@ from telova_api.schemas import (
     AuthResponse,
     CalendarEventCreateRequest,
     CalendarEventRead,
+    ChatRequest,
+    ChatResponse,
     ConflictAlertRead,
     ContextPackageRead,
     CronRequest,
@@ -64,6 +66,7 @@ from telova_api.security import (
 )
 from telova_api.secrets import SecretResolver
 from telova_api.services.auth_service import UserAuthService
+from telova_api.services.chat_service import TelovaChatService
 from telova_api.services.factory import build_orchestrator
 
 
@@ -137,6 +140,14 @@ async def get_auth_service(session: AsyncSession = Depends(get_session)):
 @app.get("/health")
 async def health():
     return {"status": "ok", "app": settings.app_name}
+
+
+@app.post("/api/v1/auth/chat", response_model=ChatResponse)
+async def chat_with_agent(payload: ChatRequest):
+    chat_service = TelovaChatService(settings)
+    history = [{"role": msg.role, "content": msg.content} for msg in payload.history]
+    reply = await chat_service.chat(user_message=payload.message, history=history)
+    return ChatResponse(reply=reply)
 
 
 @app.post("/api/v1/auth/signup", response_model=AuthResponse)

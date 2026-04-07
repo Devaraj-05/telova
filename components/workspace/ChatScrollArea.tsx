@@ -10,6 +10,7 @@ import type {
 import { formatShortDate } from "@/lib/utils";
 import { WelcomeState } from "@/components/workspace/messages/WelcomeState";
 import { UserMessageBubble } from "@/components/workspace/messages/UserMessageBubble";
+import { AgentMessageBubble } from "@/components/workspace/messages/AgentMessageBubble";
 import { AgentAnalysisCard } from "@/components/workspace/messages/AgentAnalysisCard";
 import { AgentActivityInlineCard } from "@/components/workspace/messages/AgentActivityInlineCard";
 import { FollowupQuestionCard } from "@/components/workspace/messages/FollowupQuestionCard";
@@ -65,6 +66,14 @@ export function ChatScrollArea({
           case "user":
             return (
               <UserMessageBubble
+                key={message.id}
+                text={message.text}
+                timestamp={formatShortDate(message.createdAt)}
+              />
+            );
+          case "agent_reply":
+            return (
+              <AgentMessageBubble
                 key={message.id}
                 text={message.text}
                 timestamp={formatShortDate(message.createdAt)}

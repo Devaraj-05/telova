@@ -298,8 +298,6 @@ class UserAuthService:
             return IDENTITY_SCOPES
 
         scopes = [*IDENTITY_SCOPES, *CALENDAR_SCOPES, *TASKS_SCOPES]
-        if include_keep or self.settings.google_keep_enabled:
-            scopes.extend(KEEP_SCOPES)
         return scopes
 
     def build_google_error_redirect(

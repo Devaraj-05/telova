@@ -130,15 +130,7 @@ export function WorkspaceSidebar({
         </div>
       </div>
 
-      <div className="mt-auto rounded-2xl border border-border bg-card/60 p-4">
-        <div className="flex items-center gap-2 text-sm font-semibold text-text">
-          <Workflow className="size-4 text-brand" />
-          Live workspace
-        </div>
-        <p className="mt-2 text-sm leading-6 text-muted">
-          Chat, orchestration, planning, and sync all stay in one surface.
-        </p>
-      </div>
+
     </aside>
   );
 }

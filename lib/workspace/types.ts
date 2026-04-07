@@ -187,6 +187,7 @@ interface MessageBase {
 export type ChatMessage =
   | (MessageBase & { type: "welcome" })
   | (MessageBase & { type: "user"; text: string })
+  | (MessageBase & { type: "agent_reply"; text: string })
   | (MessageBase & { type: "analysis"; data: AnalysisData })
   | (MessageBase & { type: "activity"; data: AgentActivityItem[] })
   | (MessageBase & { type: "followup"; data: FollowupQuestion })

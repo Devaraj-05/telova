@@ -31,7 +31,9 @@ import {
   fetchDashboard,
   fetchSystemStatus,
   previewGoalPlan,
+  sendChatMessage,
 } from "@/lib/workspace/api";
+import type { ChatHistoryItem } from "@/lib/workspace/api";
 import type {
   ChatMessage,
   DashboardRead,
@@ -75,6 +77,7 @@ export function useWorkspaceController(userId: string | null) {
   const [systemStatus, setSystemStatus] = useState<SystemStatusRead | null>(null);
   const [agentFeed, setAgentFeed] = useState(DEFAULT_AGENT_FEED);
   const [isBusy, setIsBusy] = useState(false);
+  const [chatHistory, setChatHistory] = useState<ChatHistoryItem[]>([]);
 
   const activeUserId = draft?.userId ?? userId;
 
@@ -484,16 +487,44 @@ export function useWorkspaceController(userId: string | null) {
       return;
     }
 
-    await handleStartGoalFlow(value);
+    // Send to Vertex AI chat agent
+    pushMessages([createUserMessage(value)]);
+    setIsBusy(true);
+    setChatHistory((prev) => [...prev, { role: "user", content: value }]);
+
+    try {
+      const reply = await sendChatMessage(value, chatHistory);
+      setChatHistory((prev) => [...prev, { role: "assistant", content: reply }]);
+      pushMessages([
+        {
+          id: createMessageId("agent_reply"),
+          type: "agent_reply",
+          createdAt: nowIso(),
+          text: reply,
+        },
+      ]);
+    } catch {
+      pushMessages([
+        {
+          id: createMessageId("agent_reply"),
+          type: "agent_reply",
+          createdAt: nowIso(),
+          text: "Sorry, I couldn't process your request right now. Please try again.",
+        },
+      ]);
+    } finally {
+      setIsBusy(false);
+    }
   }, [
+    chatHistory,
     composerValue,
     draft,
     handleFollowupReply,
     handleGeneratePreview,
-    handleStartGoalFlow,
     isBusy,
     mode,
     pendingFollowup,
+    pushMessages,
   ]);
 
   const handleQuickAction = useCallback(
