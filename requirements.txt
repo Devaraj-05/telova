@@ -10,3 +10,9 @@ mcp
 httpx
 pytest
 pytest-asyncio
+
+# Google Cloud / OAuth / Workspace / Vertex AI
+google-auth
+google-auth-oauthlib
+google-api-python-client
+google-genai
