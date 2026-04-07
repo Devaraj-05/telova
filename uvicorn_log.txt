@@ -1,0 +1,6 @@
+INFO:     Started server process [11312]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
+INFO:     Uvicorn running on http://127.0.0.1:8001 (Press CTRL+C to quit)
+{"timestamp": "2026-04-07T19:10:38.377659+00:00", "level": "info", "logger": "telova.access", "message": "request_completed", "request_id": "3ad56c56-14ac-4ace-a219-876409b03931", "method": "GET", "path": "/api/v1/dashboard", "status_code": 200, "duration_ms": 64, "client": "127.0.0.1"}
+INFO:     127.0.0.1:56729 - "GET /api/v1/dashboard?user_id=demo-user HTTP/1.1" 200 OK
