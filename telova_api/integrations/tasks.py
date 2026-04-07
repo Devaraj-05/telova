@@ -144,7 +144,7 @@ class GoogleTaskGateway(DatabaseTaskGateway):
             goal.user_id,
             scopes=TASKS_SCOPES,
         ):
-            return tasks
+            return await super().sync_generated_tasks(goal, tasks)
 
         try:
             tasklist_id = await self._resolve_tasklist_id(goal.user_id)

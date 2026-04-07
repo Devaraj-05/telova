@@ -3,6 +3,39 @@
 from dataclasses import dataclass
 from functools import lru_cache
 import os
+from pathlib import Path
+
+
+def _load_dotenv_file(path: Path) -> None:
+    if not path.exists():
+        return
+
+    for raw_line in path.read_text(encoding="utf-8").splitlines():
+        line = raw_line.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+
+        key, value = line.split("=", maxsplit=1)
+        key = key.strip()
+        if not key or key in os.environ:
+            continue
+
+        cleaned = value.strip()
+        if (
+            len(cleaned) >= 2
+            and cleaned[0] == cleaned[-1]
+            and cleaned[0] in {"'", '"'}
+        ):
+            cleaned = cleaned[1:-1]
+        os.environ[key] = cleaned
+
+
+def _load_local_env() -> None:
+    repo_root = Path(__file__).resolve().parent.parent
+    _load_dotenv_file(repo_root / ".env")
+
+
+_load_local_env()
 
 
 def _as_bool(value: str, default: bool = False) -> bool:
