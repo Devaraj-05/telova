@@ -11,7 +11,6 @@ import {
   RefreshCcw,
   Settings,
   Sparkles,
-  Workflow,
   X,
 } from "lucide-react";
 

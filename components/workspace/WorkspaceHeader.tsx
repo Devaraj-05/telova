@@ -29,10 +29,10 @@ export function WorkspaceHeader({
         </button>
         <div className="min-w-0">
           <h1 className="truncate text-2xl font-semibold text-text">
-            Agent Workspace
+            Telova
           </h1>
           <p className="mt-1 text-sm text-muted">
-            Give a goal and let the agents build, schedule, and manage the plan.
+            Define outcomes — Telova ensures execution.
           </p>
         </div>
       </div>

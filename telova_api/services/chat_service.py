@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os
 from typing import Any
 
 from telova_api.config import Settings
@@ -9,20 +10,24 @@ from telova_api.config import Settings
 logger = logging.getLogger("telova.chat")
 
 SYSTEM_INSTRUCTION = """\
-You are Telova, an AI-powered goal-to-execution assistant. Your purpose is to help users with:
-- Goal planning and breakdown
-- Scheduling and time management
-- Task execution tracking
-- Follow-ups and progress reviews
-- Re-planning when things go off track
+You are Telova, an autonomous Goal-to-Execution AI assistant. You are NOT a generic chatbot.
 
-Rules:
-1. Only answer questions related to planning, execution, scheduling, goal tracking, productivity, and time management.
-2. If the user asks something unrelated (e.g. jokes, code, general knowledge), politely decline and redirect them to goal planning.
-3. Be concise, actionable, and encouraging.
-4. When a user describes a goal, break it into phases, milestones, and tasks.
-5. Always suggest next steps the user can take.
-6. If the user hasn't connected Google tools, remind them that Telova will store everything locally and they can sync later.
+Your single purpose is to help users achieve their goals by:
+1. Understanding their goal from a natural language description
+2. Breaking goals into dependency-aware execution plans (phases, milestones, tasks)
+3. Creating intelligent schedules with realistic time estimates
+4. Tracking progress and adapting plans when things go off track
+5. Providing daily action items and follow-ups
+
+RULES:
+- Only answer questions related to goal planning, execution, scheduling, task management, progress tracking, time management, and productivity.
+- If a user describes a goal, break it into clear phases with milestones and actionable tasks. Include time estimates.
+- Always suggest concrete next steps the user should take.
+- If the user asks something unrelated (jokes, code help, general knowledge, etc.), politely say: "I'm Telova, your goal execution assistant. I can help you plan, schedule, and track goals. What would you like to achieve?"
+- Be concise, actionable, and encouraging.
+- Format responses with clear structure using bullet points and sections when breaking down plans.
+- If the user hasn't connected Google tools, mention that Telova will store everything locally and they can connect Google Calendar and Tasks later to sync automatically.
+- When a user shares progress or completion, acknowledge it and suggest what comes next.
 """
 
 
@@ -30,6 +35,17 @@ class TelovaChatService:
     def __init__(self, settings: Settings) -> None:
         self.settings = settings
         self._model_name = settings.adk_model or "gemini-2.5-flash"
+
+    def _resolve_project_id(self) -> str | None:
+        """Try multiple sources to find a GCP project ID."""
+        return (
+            self.settings.google_cloud_project
+            or self.settings.gcp_project_id
+            or os.environ.get("GOOGLE_CLOUD_PROJECT")
+            or os.environ.get("GCLOUD_PROJECT")
+            or os.environ.get("DEVSHELL_PROJECT_ID")  # Cloud Shell auto-sets this
+            or None
+        )
 
     async def chat(self, *, user_message: str, history: list[dict[str, str]] | None = None) -> str:
         """Send a message to the Vertex AI / Gemini model and return the response."""
@@ -39,17 +55,30 @@ class TelovaChatService:
             logger.exception("Chat model call failed: %s", exc)
             return (
                 "I'm having trouble connecting to the AI service right now. "
-                "Please make sure Vertex AI is configured and try again."
+                "Please check that Vertex AI is enabled in your Google Cloud project "
+                "and that you've run `gcloud auth application-default login` in Cloud Shell."
             )
 
     async def _call_model(self, user_message: str, history: list[dict[str, str]]) -> str:
         from google import genai
 
-        client = genai.Client(
-            vertexai=self.settings.google_genai_use_vertexai,
-            project=self.settings.google_cloud_project or self.settings.gcp_project_id,
-            location=self.settings.google_cloud_location or self.settings.gcp_region,
-        )
+        project_id = self._resolve_project_id()
+        location = self.settings.google_cloud_location or "us-central1"
+
+        # Prefer API key (simplest, no auth setup needed)
+        if self.settings.google_api_key:
+            client = genai.Client(api_key=self.settings.google_api_key)
+        elif project_id:
+            client = genai.Client(
+                vertexai=True,
+                project=project_id,
+                location=location,
+            )
+        else:
+            raise RuntimeError(
+                "No GOOGLE_API_KEY or GCP_PROJECT_ID configured. "
+                "Set one in your .env file."
+            )
 
         # Build contents from history + new message
         contents: list[dict[str, Any]] = []

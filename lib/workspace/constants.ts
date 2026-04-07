@@ -19,20 +19,20 @@ export const SIDEBAR_NAV_ITEMS: NavItem[] = [
 
 export const WELCOME_PROMPTS: SuggestionPrompt[] = [
   {
-    label: "Crack a software engineer interview in 45 days",
-    value: "Help me crack a software engineer interview in 45 days.",
+    label: "Get a job in 3 months",
+    value: "Help me get a software engineering job in 3 months.",
   },
   {
     label: "Launch my SaaS MVP in 30 days",
     value: "Help me launch my SaaS MVP in 30 days.",
   },
   {
-    label: "Prepare for AWS certification in 60 days",
-    value: "Help me prepare for AWS certification in 60 days.",
+    label: "Prepare for AWS certification",
+    value: "Help me prepare for AWS Solutions Architect certification in 60 days.",
   },
   {
-    label: "Build a fitness routine and stick to it",
-    value: "Help me build a fitness routine and actually stick to it.",
+    label: "Build a fitness routine",
+    value: "Help me build a consistent fitness routine and stick to it for 90 days.",
   },
 ];
 
