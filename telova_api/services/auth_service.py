@@ -101,9 +101,13 @@ class UserAuthService:
         )
 
         client_config = self._resolve_google_oauth_client_config()
-        callback_uri = str(request.url_for("google_oauth_callback"))
-        if "cloudshell.dev" in callback_uri and callback_uri.startswith("http://"):
-            callback_uri = callback_uri.replace("http://", "https://", 1)
+        # Extract the exact redirect URI registered in the JSON to avoid any proxy/scheme mismatch issues
+        try:
+            callback_uri = client_config["web"]["redirect_uris"][0]
+        except (KeyError, IndexError) as exc:
+            raise HTTPException(
+                status_code=500, detail="Missing redirect_uris in Google OAuth client config."
+            ) from exc
 
         try:
             from google_auth_oauthlib.flow import Flow
@@ -169,9 +173,12 @@ class UserAuthService:
             ) from exc
 
         flow = Flow.from_client_config(client_config, scopes=scopes, state=state_token)
-        callback_uri = str(request.url_for("google_oauth_callback"))
-        if "cloudshell.dev" in callback_uri and callback_uri.startswith("http://"):
-            callback_uri = callback_uri.replace("http://", "https://", 1)
+        try:
+            callback_uri = client_config["web"]["redirect_uris"][0]
+        except (KeyError, IndexError) as exc:
+            raise HTTPException(
+                status_code=500, detail="Missing redirect_uris in Google OAuth client config."
+            ) from exc
         flow.redirect_uri = callback_uri
 
         # Restore the PKCE code_verifier that was stored in the state token
