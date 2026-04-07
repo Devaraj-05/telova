@@ -9,6 +9,7 @@ import {
 
 export const SIDEBAR_NAV_ITEMS: NavItem[] = [
   { id: "workspace", label: "Workspace", href: "/workspace" },
+  { id: "dashboard", label: "Dashboard", href: "/dashboard" },
   { id: "settings", label: "Settings", href: "/settings" },
 ];
 

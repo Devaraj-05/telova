@@ -46,20 +46,6 @@ export function WorkspaceHeader({
           <span className="size-2 rounded-full bg-brand" />
           {runtimeStatus}
         </div>
-        <button
-          type="button"
-          onClick={onNewGoal}
-          className="inline-flex items-center gap-2 rounded-2xl bg-brand px-4 py-3 text-sm font-semibold text-white transition hover:bg-brand/90"
-        >
-          <Plus className="size-4" />
-          New Goal
-        </button>
-        <Link
-          href="/dashboard"
-          className="hidden rounded-2xl border border-border bg-white/5 px-4 py-3 text-sm font-semibold text-text transition hover:bg-white/10 md:inline-flex"
-        >
-          Open Dashboard
-        </Link>
       </div>
     </header>
   );

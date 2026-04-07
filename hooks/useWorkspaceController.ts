@@ -66,7 +66,17 @@ function createWelcomeMessage(): ChatMessage {
 
 export function useWorkspaceController(userId: string | null) {
   const router = useRouter();
-  const [messages, setMessages] = useState<ChatMessage[]>([createWelcomeMessage()]);
+  const [messages, setMessages] = useState<ChatMessage[]>(() => {
+    if (typeof window !== "undefined") {
+      try {
+        const stored = localStorage.getItem("telova_chat_messages");
+        if (stored) return JSON.parse(stored);
+      } catch (e) {
+        console.error("Failed to parse stored messages", e);
+      }
+    }
+    return [createWelcomeMessage()];
+  });
   const [composerValue, setComposerValue] = useState("");
   const [mode, setMode] = useState<WorkspaceComposerMode>("goal");
   const [pendingFollowup, setPendingFollowup] = useState<FollowupQuestion | null>(null);
@@ -77,7 +87,24 @@ export function useWorkspaceController(userId: string | null) {
   const [systemStatus, setSystemStatus] = useState<SystemStatusRead | null>(null);
   const [agentFeed, setAgentFeed] = useState(DEFAULT_AGENT_FEED);
   const [isBusy, setIsBusy] = useState(false);
-  const [chatHistory, setChatHistory] = useState<ChatHistoryItem[]>([]);
+  const [chatHistory, setChatHistory] = useState<ChatHistoryItem[]>(() => {
+    if (typeof window !== "undefined") {
+      try {
+        const stored = localStorage.getItem("telova_chat_history");
+        if (stored) return JSON.parse(stored);
+      } catch (e) {
+        console.error("Failed to parse stored chat history", e);
+      }
+    }
+    return [];
+  });
+
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      localStorage.setItem("telova_chat_messages", JSON.stringify(messages));
+      localStorage.setItem("telova_chat_history", JSON.stringify(chatHistory));
+    }
+  }, [messages, chatHistory]);
 
   const activeUserId = draft?.userId ?? userId;
 
@@ -106,7 +133,7 @@ export function useWorkspaceController(userId: string | null) {
   }, [refreshWorkspaceContext]);
 
   const runtimeStatus = useMemo(() => {
-    const count = systemStatus?.agents?.length ?? 4;
+    const count = systemStatus?.agents?.length ?? 0;
     return `${count} agents online`;
   }, [systemStatus]);
 
@@ -157,6 +184,7 @@ export function useWorkspaceController(userId: string | null) {
     setPreview(null);
     setCreatedGoal(null);
     setAgentFeed(DEFAULT_AGENT_FEED);
+    setChatHistory([]);
   }, []);
 
   const handleGeneratePreview = useCallback(

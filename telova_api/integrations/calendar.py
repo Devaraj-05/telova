@@ -31,8 +31,8 @@ class DatabaseCalendarGateway:
             user_id=goal.user_id,
             goal_id=goal.id,
             task_id=task.id,
-            title=task.title,
-            description=task.description,
+            title=f"[{goal.title}] {task.title}",
+            description=f"Goal: {goal.title}\nTask: {task.title}\n\n{task.description}\n\n— Auto-scheduled by Telova",
             source=EventSource.SYSTEM.value,
             start_at=task.scheduled_start,
             end_at=task.scheduled_end,
@@ -226,8 +226,8 @@ class GoogleCalendarGateway(DatabaseCalendarGateway):
                 .insert(
                     calendarId=self.settings.google_calendar_id,
                     body=self._build_remote_event_body(
-                        title=task.title,
-                        description=task.description,
+                        title=event.title,
+                        description=event.description,
                         start_at=task.scheduled_start,
                         end_at=task.scheduled_end,
                         telova_managed=True,

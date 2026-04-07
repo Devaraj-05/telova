@@ -295,6 +295,7 @@ export interface DashboardRead {
   goals: GoalRead[];
   recent_tasks: TaskRead[];
   upcoming_events: CalendarEventRead[];
+  notes: Record<string, any>[];
 }
 
 export interface ToolConnectionRead {
