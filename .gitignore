@@ -12,5 +12,10 @@ npm-debug.log*
 telova.db
 *.db
 secrets/
+.env
+.env.local
+.env.*.local
+.env.production
+infra/gcp/cloudrun.env.yaml
 secrets/
-secrets/
+*.secret
