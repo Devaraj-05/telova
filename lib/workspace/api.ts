@@ -18,6 +18,7 @@ async function apiRequest<T>(path: string, init?: RequestInit): Promise<T> {
       ...(init?.headers ?? {}),
     },
     cache: "no-store",
+    credentials: "include",
   });
 
   if (!response.ok) {

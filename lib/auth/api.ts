@@ -28,6 +28,7 @@ async function jsonRequest<T>(
       ...(init?.headers ?? {}),
     },
     cache: "no-store",
+    credentials: "include",
   });
 
   if (!response.ok) {
