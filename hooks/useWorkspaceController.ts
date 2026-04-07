@@ -62,7 +62,7 @@ function createWelcomeMessage(): ChatMessage {
   };
 }
 
-export function useWorkspaceController() {
+export function useWorkspaceController(userId: string | null) {
   const router = useRouter();
   const [messages, setMessages] = useState<ChatMessage[]>([createWelcomeMessage()]);
   const [composerValue, setComposerValue] = useState("");
@@ -76,12 +76,17 @@ export function useWorkspaceController() {
   const [agentFeed, setAgentFeed] = useState(DEFAULT_AGENT_FEED);
   const [isBusy, setIsBusy] = useState(false);
 
-  const userId = draft?.userId ?? "demo-user";
+  const activeUserId = draft?.userId ?? userId;
 
   const refreshWorkspaceContext = useCallback(async () => {
+    if (!activeUserId) {
+      setDashboard(null);
+      setSystemStatus(null);
+      return;
+    }
     const [dashboardResult, systemResult] = await Promise.allSettled([
-      fetchDashboard(userId),
-      fetchSystemStatus(userId),
+      fetchDashboard(activeUserId),
+      fetchSystemStatus(activeUserId),
     ]);
 
     if (dashboardResult.status === "fulfilled") {
@@ -91,7 +96,7 @@ export function useWorkspaceController() {
     if (systemResult.status === "fulfilled") {
       setSystemStatus(systemResult.value);
     }
-  }, [userId]);
+  }, [activeUserId]);
 
   useEffect(() => {
     void refreshWorkspaceContext();
@@ -205,7 +210,7 @@ export function useWorkspaceController() {
 
   const handleStartGoalFlow = useCallback(
     async (prompt: string) => {
-      const nextDraft = buildDraftFromPrompt(prompt, userId);
+      const nextDraft = buildDraftFromPrompt(prompt, activeUserId ?? "demo-user");
       setDraft(nextDraft);
       setPreview(null);
       setCreatedGoal(null);
@@ -244,7 +249,7 @@ export function useWorkspaceController() {
 
       await handleGeneratePreview(nextDraft);
     },
-    [handleGeneratePreview, pushMessages, userId],
+    [activeUserId, handleGeneratePreview, pushMessages],
   );
 
   const handleFollowupReply = useCallback(

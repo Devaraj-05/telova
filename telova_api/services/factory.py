@@ -17,6 +17,9 @@ from telova_api.integrations.tasks import DatabaseTaskGateway, GoogleTaskGateway
 from telova_api.repositories.analytics import AgentRunRepository, McpSyncLogRepository
 from telova_api.repositories.calendar import CalendarEventRepository
 from telova_api.repositories.goals import GoalRepository
+from telova_api.repositories.google_connections import (
+    GoogleWorkspaceConnectionRepository,
+)
 from telova_api.repositories.notes import (
     ContextPackageRepository,
     NoteRepository,
@@ -43,10 +46,15 @@ def build_orchestrator(session: AsyncSession) -> TelovaOrchestratorService:
     replan_repo = ReplanRepository(session)
     agent_run_repo = AgentRunRepository(session)
     sync_log_repo = McpSyncLogRepository(session)
+    connection_repo = GoogleWorkspaceConnectionRepository(session)
 
     scheduler = TimeboxScheduler(settings.app_timezone)
     secret_resolver = SecretResolver(settings)
-    workspace_factory = GoogleWorkspaceClientFactory(settings, secret_resolver)
+    workspace_factory = GoogleWorkspaceClientFactory(
+        settings,
+        secret_resolver,
+        connection_repo=connection_repo,
+    )
     goal_decomposer = GoalDecomposerAgent(scheduler)
     data_analyst = ProductivityDataAnalystService(
         session=session,

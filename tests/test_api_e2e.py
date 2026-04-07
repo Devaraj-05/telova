@@ -205,6 +205,37 @@ def test_analytics_and_telemetry_endpoints(client: TestClient):
     assert any(check["name"] == "AlloyDB AI NL" for check in system["readiness"])
 
 
+def test_email_auth_and_google_status_flow(client: TestClient):
+    signup_response = client.post(
+        "/api/v1/auth/signup",
+        json={
+            "email": "devaraj@example.com",
+            "password": "Telova@123",
+            "display_name": "Devaraj",
+        },
+    )
+    assert signup_response.status_code == 200
+    signup_payload = signup_response.json()
+    token = signup_payload["access_token"]
+
+    me_response = client.get(
+        "/api/v1/auth/me",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert me_response.status_code == 200
+    assert me_response.json()["email"] == "devaraj@example.com"
+
+    google_status_response = client.get(
+        "/api/v1/auth/google/status",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert google_status_response.status_code == 200
+    google_status = google_status_response.json()
+    assert google_status["status"] == "disconnected"
+    assert google_status["calendar_connected"] is False
+    assert google_status["tasks_connected"] is False
+
+
 def test_api_auth_middleware_enforces_api_key():
     secured = FastAPI()
     secured.add_middleware(
@@ -224,3 +255,19 @@ def test_api_auth_middleware_enforces_api_key():
         client.get("/api/ping", headers={"X-Telova-API-Key": "secret-key"}).status_code
         == 200
     )
+
+
+def test_api_auth_middleware_skips_auth_routes():
+    secured = FastAPI()
+    secured.add_middleware(
+        ApiAuthMiddleware,
+        auth_mode="api_key",
+        api_key="secret-key",
+    )
+
+    @secured.get("/api/v1/auth/ping")
+    async def ping():
+        return {"ok": True}
+
+    client = TestClient(secured)
+    assert client.get("/api/v1/auth/ping").status_code == 200

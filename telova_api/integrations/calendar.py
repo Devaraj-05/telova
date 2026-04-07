@@ -210,7 +210,10 @@ class GoogleCalendarGateway(DatabaseCalendarGateway):
 
     async def materialize_task_block(self, goal: Goal, task: Task) -> CalendarEvent:
         event = await super().materialize_task_block(goal, task)
-        if not self.workspace_factory.is_configured():
+        if not await self.workspace_factory.is_ready(
+            goal.user_id,
+            scopes=CALENDAR_SCOPES,
+        ):
             return event
 
         try:
@@ -290,7 +293,10 @@ class GoogleCalendarGateway(DatabaseCalendarGateway):
             goal_id=goal_id,
             task_id=task_id,
         )
-        if not self.workspace_factory.is_configured():
+        if not await self.workspace_factory.is_ready(
+            user_id,
+            scopes=CALENDAR_SCOPES,
+        ):
             return event
 
         try:
@@ -386,8 +392,11 @@ class GoogleCalendarGateway(DatabaseCalendarGateway):
             end_at=end_at,
             reason=reason,
         )
-        if not (
-            self.workspace_factory.is_configured() and updated.external_event_id
+        if not updated.external_event_id:
+            return updated
+        if not await self.workspace_factory.is_ready(
+            updated.user_id,
+            scopes=CALENDAR_SCOPES,
         ):
             return updated
 
@@ -443,14 +452,17 @@ class GoogleCalendarGateway(DatabaseCalendarGateway):
         return updated
 
     async def describe_status(self, user_id: str) -> IntegrationStatus:
-        if not self.workspace_factory.is_configured():
+        if not await self.workspace_factory.is_ready(
+            user_id,
+            scopes=CALENDAR_SCOPES,
+        ):
             return IntegrationStatus(
                 name="Calendar",
                 kind="Google Calendar",
                 status="warning",
                 detail=(
-                    "Google backend is enabled, but Calendar credentials are not "
-                    "ready. Falling back to local calendar storage."
+                    "Google backend is enabled, but Calendar access is not "
+                    "connected for this user yet. Falling back to local calendar storage."
                 ),
                 backend="google",
             )
@@ -467,7 +479,10 @@ class GoogleCalendarGateway(DatabaseCalendarGateway):
         )
 
     async def _sync_external_events(self, user_id: str, *, hours_ahead: int) -> None:
-        if not self.workspace_factory.is_configured():
+        if not await self.workspace_factory.is_ready(
+            user_id,
+            scopes=CALENDAR_SCOPES,
+        ):
             return
 
         now = datetime.now(UTC)

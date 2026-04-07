@@ -1,7 +1,9 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
+import { useAuth } from "@/components/auth/AuthProvider";
+import { GoogleConnectionPrompt } from "@/components/workspace/GoogleConnectionPrompt";
 import { WorkspaceSidebar } from "@/components/workspace/WorkspaceSidebar";
 import { WorkspaceMain } from "@/components/workspace/WorkspaceMain";
 import { WorkspaceHeader } from "@/components/workspace/WorkspaceHeader";
@@ -13,12 +15,38 @@ import { useWorkspaceController } from "@/hooks/useWorkspaceController";
 export function WorkspaceLayout() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [insightsOpen, setInsightsOpen] = useState(false);
-  const workspace = useWorkspaceController();
+  const [connectPromptDismissed, setConnectPromptDismissed] = useState(false);
+  const [isConnectingGoogle, setIsConnectingGoogle] = useState(false);
+  const [connectPromptError, setConnectPromptError] = useState<string | null>(null);
+  const {
+    user,
+    logout,
+    googleConnection,
+    connectGoogleWorkspace,
+  } = useAuth();
+  const workspace = useWorkspaceController(user?.id ?? null);
+
+  useEffect(() => {
+    if (googleConnection?.status === "connected") {
+      setConnectPromptDismissed(false);
+      setConnectPromptError(null);
+    }
+  }, [googleConnection?.status]);
+
+  const showGooglePrompt =
+    user &&
+    googleConnection?.status !== "connected" &&
+    !connectPromptDismissed;
 
   return (
     <div className="flex h-screen bg-canvas text-text">
       <div className="hidden xl:block">
-        <WorkspaceSidebar activeItem="workspace" />
+        <WorkspaceSidebar
+          activeItem="workspace"
+          userName={user?.display_name}
+          userEmail={user?.email}
+          onLogout={logout}
+        />
       </div>
 
       {sidebarOpen ? (
@@ -32,7 +60,10 @@ export function WorkspaceLayout() {
           <div className="h-full">
             <WorkspaceSidebar
               activeItem="workspace"
+              userName={user?.display_name}
+              userEmail={user?.email}
               mobile
+              onLogout={logout}
               onClose={() => setSidebarOpen(false)}
             />
           </div>
@@ -52,6 +83,32 @@ export function WorkspaceLayout() {
         chat={
           <div className="flex min-h-0 flex-1">
             <section className="flex min-w-0 flex-1 flex-col">
+              {showGooglePrompt ? (
+                <GoogleConnectionPrompt
+                  connection={googleConnection}
+                  error={connectPromptError}
+                  isConnecting={isConnectingGoogle}
+                  onConnect={async () => {
+                    setIsConnectingGoogle(true);
+                    setConnectPromptError(null);
+                    try {
+                      await connectGoogleWorkspace();
+                    } catch (error) {
+                      setConnectPromptError(
+                        error instanceof Error
+                          ? error.message
+                          : "Unable to start Google authorization.",
+                      );
+                    } finally {
+                      setIsConnectingGoogle(false);
+                    }
+                  }}
+                  onDismiss={() => {
+                    setConnectPromptDismissed(true);
+                    setConnectPromptError(null);
+                  }}
+                />
+              ) : null}
               <ChatScrollArea
                 messages={workspace.messages}
                 welcomePrompts={workspace.welcomePrompts}

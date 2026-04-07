@@ -5,6 +5,9 @@ import json
 import logging
 
 from telova_api.config import Settings
+from telova_api.repositories.google_connections import (
+    GoogleWorkspaceConnectionRepository,
+)
 from telova_api.secrets import SecretResolver
 
 
@@ -16,9 +19,16 @@ class GoogleWorkspaceConfigurationError(RuntimeError):
 
 
 class GoogleWorkspaceClientFactory:
-    def __init__(self, settings: Settings, secret_resolver: SecretResolver) -> None:
+    def __init__(
+        self,
+        settings: Settings,
+        secret_resolver: SecretResolver,
+        *,
+        connection_repo: GoogleWorkspaceConnectionRepository | None = None,
+    ) -> None:
         self.settings = settings
         self.secret_resolver = secret_resolver
+        self.connection_repo = connection_repo
 
     def is_enabled(self) -> bool:
         return self.settings.is_google_backend
@@ -55,6 +65,25 @@ class GoogleWorkspaceClientFactory:
             return user_id
         return self.settings.google_workspace_subject
 
+    async def is_ready(
+        self,
+        user_id: str | None = None,
+        *,
+        scopes: list[str] | None = None,
+    ) -> bool:
+        if not self.is_enabled():
+            return False
+
+        if user_id and self.connection_repo is not None:
+            connection = await self.connection_repo.get_by_user_id(user_id)
+            if connection is not None:
+                if not scopes:
+                    return True
+                granted_scopes = set(connection.granted_scopes or [])
+                return all(scope in granted_scopes for scope in scopes)
+
+        return self.is_configured()
+
     async def execute(
         self,
         *,
@@ -68,24 +97,22 @@ class GoogleWorkspaceClientFactory:
             raise GoogleWorkspaceConfigurationError(
                 "Google Workspace integrations are not enabled."
             )
+        credentials = await self._build_credentials_async(scopes, user_id=user_id)
         return await asyncio.to_thread(
             self._execute_sync,
-            user_id,
+            credentials,
             service_name,
             version,
-            scopes,
             operation,
         )
 
     def _execute_sync(
         self,
-        user_id: str | None,
+        credentials,
         service_name: str,
         version: str,
-        scopes: list[str],
         operation,
     ):
-        credentials = self._build_credentials(scopes, user_id=user_id)
         try:
             from googleapiclient.discovery import build
         except ImportError as exc:
@@ -102,11 +129,42 @@ class GoogleWorkspaceClientFactory:
         )
         return operation(service)
 
+    async def _build_credentials_async(
+        self,
+        scopes: list[str],
+        *,
+        user_id: str | None = None,
+    ):
+        if user_id and self.connection_repo is not None:
+            connection = await self.connection_repo.get_by_user_id(user_id)
+            if connection is not None:
+                granted_scopes = set(connection.granted_scopes or [])
+                missing_scopes = [
+                    scope for scope in scopes if scope not in granted_scopes
+                ]
+                if missing_scopes:
+                    raise GoogleWorkspaceConfigurationError(
+                        "The connected Google account is missing required scopes: "
+                        f"{', '.join(missing_scopes)}."
+                    )
+                try:
+                    from google.oauth2.credentials import Credentials
+                except ImportError as exc:
+                    raise GoogleWorkspaceConfigurationError(
+                        "Authorized user mode requires `google-auth`."
+                    ) from exc
+                return Credentials.from_authorized_user_info(
+                    dict(connection.credentials_json or {}),
+                    scopes=scopes,
+                )
+
+        return self._build_credentials(scopes, user_id=user_id)
+
     def _build_credentials(self, scopes: list[str], user_id: str | None = None):
         mode = self.auth_mode()
         if mode == "disabled":
             raise GoogleWorkspaceConfigurationError(
-                "GOOGLE_WORKSPACE_AUTH_MODE is disabled."
+                "Google Workspace credentials are not available for this user."
             )
         if mode == "authorized_user":
             payload = self.secret_resolver.resolve_text(
@@ -167,6 +225,8 @@ class GoogleWorkspaceClientFactory:
     def describe_auth(self) -> str:
         mode = self.auth_mode()
         if mode == "disabled":
+            if self.connection_repo is not None:
+                return "Using per-user OAuth connections for Workspace APIs."
             return "Google Workspace auth is disabled."
         if mode == "authorized_user":
             return "Using OAuth authorized-user credentials for Workspace APIs."

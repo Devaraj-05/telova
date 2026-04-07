@@ -23,6 +23,7 @@ class Settings:
     app_name: str
     app_env: str
     app_timezone: str
+    frontend_app_url: str
     database_url: str
     integration_backend: str
     agent_runtime: str
@@ -47,6 +48,9 @@ class Settings:
     google_workspace_authorized_user_json: str | None
     google_workspace_authorized_user_json_file: str | None
     google_workspace_authorized_user_secret: str | None
+    google_oauth_client_json: str | None
+    google_oauth_client_json_file: str | None
+    google_oauth_client_json_secret: str | None
     google_workspace_service_account_json: str | None
     google_workspace_service_account_json_file: str | None
     google_workspace_service_account_secret: str | None
@@ -60,6 +64,8 @@ class Settings:
     adk_model: str
     adk_app_name: str
     api_auth_mode: str
+    auth_token_secret: str
+    auth_token_ttl_minutes: int
     api_key: str | None
     api_key_secret: str | None
     cron_shared_token: str | None
@@ -102,6 +108,7 @@ def get_settings() -> Settings:
         app_name=os.getenv("APP_NAME", "Telova API"),
         app_env=os.getenv("APP_ENV", "development"),
         app_timezone=os.getenv("APP_TIMEZONE", "Asia/Kolkata"),
+        frontend_app_url=os.getenv("FRONTEND_APP_URL", "http://127.0.0.1:3000"),
         database_url=os.getenv(
             "DATABASE_URL",
             "sqlite+aiosqlite:///./telova.db",
@@ -154,6 +161,15 @@ def get_settings() -> Settings:
             "GOOGLE_WORKSPACE_AUTHORIZED_USER_SECRET"
         )
         or None,
+        google_oauth_client_json=os.getenv("GOOGLE_OAUTH_CLIENT_JSON") or None,
+        google_oauth_client_json_file=os.getenv(
+            "GOOGLE_OAUTH_CLIENT_JSON_FILE"
+        )
+        or None,
+        google_oauth_client_json_secret=os.getenv(
+            "GOOGLE_OAUTH_CLIENT_JSON_SECRET"
+        )
+        or None,
         google_workspace_service_account_json=os.getenv(
             "GOOGLE_WORKSPACE_SERVICE_ACCOUNT_JSON"
         )
@@ -188,6 +204,13 @@ def get_settings() -> Settings:
         adk_model=os.getenv("ADK_MODEL", "gemini-2.5-flash"),
         adk_app_name=os.getenv("ADK_APP_NAME", "telova"),
         api_auth_mode=os.getenv("API_AUTH_MODE", "disabled"),
+        auth_token_secret=os.getenv(
+            "AUTH_TOKEN_SECRET",
+            "telova-dev-secret-change-me",
+        ),
+        auth_token_ttl_minutes=int(
+            os.getenv("AUTH_TOKEN_TTL_MINUTES", "10080")
+        ),
         api_key=os.getenv("API_KEY") or None,
         api_key_secret=os.getenv("API_KEY_SECRET") or None,
         cron_shared_token=os.getenv("CRON_SHARED_TOKEN") or None,

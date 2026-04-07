@@ -140,7 +140,10 @@ class GoogleTaskGateway(DatabaseTaskGateway):
         return updated
 
     async def sync_generated_tasks(self, goal: Goal, tasks: list[Task]) -> list[Task]:
-        if not self.workspace_factory.is_configured():
+        if not await self.workspace_factory.is_ready(
+            goal.user_id,
+            scopes=TASKS_SCOPES,
+        ):
             return tasks
 
         try:
@@ -197,14 +200,17 @@ class GoogleTaskGateway(DatabaseTaskGateway):
         return tasks
 
     async def describe_status(self, user_id: str) -> IntegrationStatus:
-        if not self.workspace_factory.is_configured():
+        if not await self.workspace_factory.is_ready(
+            user_id,
+            scopes=TASKS_SCOPES,
+        ):
             return IntegrationStatus(
                 name="Tasks",
                 kind="Google Tasks",
                 status="warning",
                 detail=(
-                    "Google backend is enabled, but Google Tasks credentials are "
-                    "not fully configured. Falling back to the local task cache."
+                    "Google backend is enabled, but Google Tasks is not "
+                    "connected for this user yet. Falling back to the local task cache."
                 ),
                 backend="google",
             )
@@ -224,7 +230,10 @@ class GoogleTaskGateway(DatabaseTaskGateway):
         )
 
     async def _sync_remote_statuses(self, user_id: str) -> None:
-        if not self.workspace_factory.is_configured():
+        if not await self.workspace_factory.is_ready(
+            user_id,
+            scopes=TASKS_SCOPES,
+        ):
             return
 
         synced_tasks = await self.task_repo.list_synced_by_user(user_id)
@@ -279,7 +288,12 @@ class GoogleTaskGateway(DatabaseTaskGateway):
                 )
 
     async def _push_status(self, task: Task) -> None:
-        if not self.workspace_factory.is_configured() or not task.external_task_id:
+        if not task.external_task_id:
+            return
+        if not await self.workspace_factory.is_ready(
+            task.user_id,
+            scopes=TASKS_SCOPES,
+        ):
             return
 
         try:

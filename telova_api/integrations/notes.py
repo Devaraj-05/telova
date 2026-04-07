@@ -262,7 +262,10 @@ class GoogleNotesGateway(DatabaseNotesGateway):
 
     async def list_user_notes(self, user_id: str, limit: int = 50) -> list[Note]:
         notes = await super().list_user_notes(user_id, limit=limit)
-        if not (self.settings.google_keep_enabled and self.workspace_factory.is_configured()):
+        if not await self.workspace_factory.is_ready(
+            user_id,
+            scopes=KEEP_SCOPES,
+        ):
             return notes
 
         for note in notes:
@@ -290,27 +293,17 @@ class GoogleNotesGateway(DatabaseNotesGateway):
         return await super().list_user_notes(user_id, limit=limit)
 
     async def describe_status(self, user_id: str) -> IntegrationStatus:
-        del user_id
-        if not self.settings.google_keep_enabled:
+        if not await self.workspace_factory.is_ready(
+            user_id,
+            scopes=KEEP_SCOPES,
+        ):
             return IntegrationStatus(
                 name="Notes",
                 kind="Google Keep",
                 status="warning",
                 detail=(
-                    "Google backend is enabled, but Google Keep sync is disabled. "
-                    "Notes remain in the local memory store."
-                ),
-                backend="google",
-            )
-
-        if not self.workspace_factory.is_configured():
-            return IntegrationStatus(
-                name="Notes",
-                kind="Google Keep",
-                status="warning",
-                detail=(
-                    "Google Keep sync is enabled, but Workspace credentials are "
-                    "not configured. Notes are staying local."
+                    "Google Keep is not connected for this user yet. Notes are "
+                    "staying in Telova's local memory store."
                 ),
                 backend="google",
             )
@@ -332,8 +325,9 @@ class GoogleNotesGateway(DatabaseNotesGateway):
         *,
         replace_existing: bool = False,
     ) -> None:
-        if not (
-            self.settings.google_keep_enabled and self.workspace_factory.is_configured()
+        if not await self.workspace_factory.is_ready(
+            note.user_id,
+            scopes=KEEP_SCOPES,
         ):
             return
 

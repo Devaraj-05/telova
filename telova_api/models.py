@@ -56,6 +56,53 @@ class SyncStatus(StrEnum):
     FAILED = "failed"
 
 
+class User(Base):
+    __tablename__ = "users"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
+    email: Mapped[str] = mapped_column(String(255), unique=True, index=True)
+    display_name: Mapped[str] = mapped_column(String(255), default="")
+    password_hash: Mapped[str | None] = mapped_column(Text, default=None)
+    google_subject: Mapped[str | None] = mapped_column(
+        String(255),
+        unique=True,
+        default=None,
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=utcnow,
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=utcnow,
+        onupdate=utcnow,
+    )
+
+
+class GoogleWorkspaceConnection(Base):
+    __tablename__ = "google_workspace_connections"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
+    user_id: Mapped[str] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"),
+        unique=True,
+        index=True,
+    )
+    provider_email: Mapped[str] = mapped_column(String(255))
+    provider_subject: Mapped[str] = mapped_column(String(255), index=True)
+    granted_scopes: Mapped[list[str]] = mapped_column(JSON, default=list)
+    credentials_json: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
+    connected_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=utcnow,
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=utcnow,
+        onupdate=utcnow,
+    )
+
+
 class Goal(Base):
     __tablename__ = "goals"
 

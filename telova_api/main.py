@@ -4,21 +4,27 @@ from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 from pathlib import Path
 
-from fastapi import Depends, FastAPI, HTTPException, Query
-from fastapi.responses import JSONResponse
-from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi import Depends, FastAPI, HTTPException, Query, Request
+from fastapi.responses import JSONResponse, RedirectResponse
+from fastapi.staticfiles import StaticFiles
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from telova_api.auth import get_current_user, get_optional_current_user
 from telova_api.config import get_settings
 from telova_api.db import close_db, get_session, init_db
 from telova_api.logging_utils import configure_logging
 from telova_api.monitoring import configure_monitoring
+from telova_api.repositories.google_connections import (
+    GoogleWorkspaceConnectionRepository,
+)
+from telova_api.repositories.users import UserRepository
 from telova_api.schemas import (
     AgentRunRead,
     AgentHealthRead,
     AnalyticsQueryRequest,
     AnalyticsQueryResponse,
+    AuthResponse,
     CalendarEventCreateRequest,
     CalendarEventRead,
     ConflictAlertRead,
@@ -26,6 +32,8 @@ from telova_api.schemas import (
     CronRequest,
     McpSyncLogRead,
     DashboardRead,
+    GoogleAuthorizationUrlRead,
+    GoogleConnectionStatusRead,
     GoalCreateRequest,
     GoalDagResponse,
     GoalPlanPreviewResponse,
@@ -33,15 +41,18 @@ from telova_api.schemas import (
     GoalPreviewTaskRead,
     GoalRead,
     GoalSwitchRequest,
+    LoginRequest,
     NoteCreateRequest,
     NoteRead,
     NoteUpdateRequest,
     ReadinessCheckRead,
+    SignupRequest,
     SystemMetricRead,
     SystemStatusRead,
     TaskRead,
     TaskUpdateRequest,
     ToolConnectionRead,
+    UserRead,
     WeeklyReviewResponse,
     WorkflowLogRead,
 )
@@ -52,6 +63,7 @@ from telova_api.security import (
     StructuredAccessLogMiddleware,
 )
 from telova_api.secrets import SecretResolver
+from telova_api.services.auth_service import UserAuthService
 from telova_api.services.factory import build_orchestrator
 
 
@@ -113,9 +125,136 @@ async def get_orchestrator(session: AsyncSession = Depends(get_session)):
     return build_orchestrator(session)
 
 
+async def get_auth_service(session: AsyncSession = Depends(get_session)):
+    return UserAuthService(
+        settings=settings,
+        secret_resolver=secret_resolver,
+        user_repo=UserRepository(session),
+        connection_repo=GoogleWorkspaceConnectionRepository(session),
+    )
+
+
 @app.get("/health")
 async def health():
     return {"status": "ok", "app": settings.app_name}
+
+
+@app.post("/api/v1/auth/signup", response_model=AuthResponse)
+async def signup(
+    payload: SignupRequest,
+    auth_service: UserAuthService = Depends(get_auth_service),
+):
+    user, access_token = await auth_service.signup(
+        email=payload.email,
+        password=payload.password,
+        display_name=payload.display_name,
+    )
+    return AuthResponse(
+        user=UserRead.model_validate(user),
+        access_token=access_token,
+    )
+
+
+@app.post("/api/v1/auth/login", response_model=AuthResponse)
+async def login(
+    payload: LoginRequest,
+    auth_service: UserAuthService = Depends(get_auth_service),
+):
+    user, access_token = await auth_service.login(
+        email=payload.email,
+        password=payload.password,
+    )
+    return AuthResponse(
+        user=UserRead.model_validate(user),
+        access_token=access_token,
+    )
+
+
+@app.get("/api/v1/auth/me", response_model=UserRead)
+async def get_me(current_user=Depends(get_current_user)):
+    return UserRead.model_validate(current_user)
+
+
+@app.get("/api/v1/auth/google/start", response_model=GoogleAuthorizationUrlRead)
+async def google_oauth_start(
+    request: Request,
+    mode: str = Query(default="login"),
+    redirect_uri: str = Query(
+        default=f"{settings.frontend_app_url.rstrip('/')}/auth/callback"
+    ),
+    include_keep: bool = Query(default=True),
+    auth_service: UserAuthService = Depends(get_auth_service),
+    current_user=Depends(get_optional_current_user),
+):
+    authorization_url = await auth_service.create_google_authorization_url(
+        request=request,
+        mode=mode,
+        redirect_uri=redirect_uri,
+        user=current_user,
+        include_keep=include_keep,
+    )
+    return GoogleAuthorizationUrlRead(authorization_url=authorization_url)
+
+
+@app.get(
+    "/api/v1/auth/google/callback",
+    include_in_schema=False,
+    name="google_oauth_callback",
+)
+async def google_oauth_callback(
+    request: Request,
+    state: str | None = Query(default=None),
+    error: str | None = Query(default=None),
+    error_description: str | None = Query(default=None),
+    auth_service: UserAuthService = Depends(get_auth_service),
+):
+    if error:
+        redirect_url = auth_service.build_google_error_redirect(
+            state_token=state,
+            error=error,
+            error_description=error_description,
+        )
+        if redirect_url:
+            return RedirectResponse(url=redirect_url, status_code=302)
+        raise HTTPException(status_code=400, detail=error_description or error)
+
+    if not state:
+        raise HTTPException(status_code=400, detail="Missing OAuth state.")
+
+    try:
+        redirect_url = await auth_service.complete_google_authorization(
+            request=request,
+            state_token=state,
+        )
+    except HTTPException as exc:
+        error_redirect = auth_service.build_google_error_redirect(
+            state_token=state,
+            error="oauth_callback_failed",
+            error_description=str(exc.detail),
+        )
+        if error_redirect:
+            return RedirectResponse(url=error_redirect, status_code=302)
+        raise
+
+    return RedirectResponse(url=redirect_url, status_code=302)
+
+
+@app.get("/api/v1/auth/google/status", response_model=GoogleConnectionStatusRead)
+async def google_connection_status(
+    auth_service: UserAuthService = Depends(get_auth_service),
+    current_user=Depends(get_current_user),
+):
+    status = await auth_service.google_connection_status(user=current_user)
+    return GoogleConnectionStatusRead.model_validate(status)
+
+
+@app.post("/api/v1/auth/google/disconnect")
+async def google_disconnect(
+    auth_service: UserAuthService = Depends(get_auth_service),
+    current_user=Depends(get_current_user),
+):
+    await auth_service.disconnect_google_connection(user=current_user)
+    return {"status": "disconnected"}
 
 
 @app.get("/api/v1/dashboard", response_model=DashboardRead)

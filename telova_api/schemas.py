@@ -75,6 +75,49 @@ class AnalyticsQueryRequest(BaseModel):
     limit: int = Field(default=10, ge=1, le=50)
 
 
+class SignupRequest(BaseModel):
+    email: str = Field(..., examples=["devaraj@example.com"])
+    password: str = Field(..., min_length=8, examples=["Telova@123"])
+    display_name: str | None = Field(default=None, examples=["Devaraj"])
+
+
+class LoginRequest(BaseModel):
+    email: str = Field(..., examples=["devaraj@example.com"])
+    password: str = Field(..., min_length=8, examples=["Telova@123"])
+
+
+class GoogleAuthorizationUrlRead(BaseModel):
+    authorization_url: str
+
+
+class UserRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: str
+    email: str
+    display_name: str
+    google_subject: str | None = None
+    created_at: datetime
+    updated_at: datetime
+
+
+class AuthResponse(BaseModel):
+    user: UserRead
+    access_token: str
+    token_type: str = "bearer"
+
+
+class GoogleConnectionStatusRead(BaseModel):
+    status: str
+    provider_email: str | None = None
+    calendar_connected: bool
+    tasks_connected: bool
+    keep_connected: bool
+    scopes: list[str]
+    connected_at: datetime | None = None
+    detail: str
+
+
 class GoalDagNode(BaseModel):
     key: str
     title: str

@@ -150,7 +150,7 @@ class ApiAuthMiddleware(BaseHTTPMiddleware):
             return await call_next(request)
         if self.auth_mode == "disabled":
             return await call_next(request)
-        if path in {"/api/openapi.json"}:
+        if path in {"/api/openapi.json"} or path.startswith("/api/v1/auth/"):
             return await call_next(request)
 
         is_cron_path = path.startswith("/api/v1/webhooks/cron/")

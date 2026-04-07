@@ -34,6 +34,7 @@ interface WorkspaceSidebarProps {
   userName?: string;
   userEmail?: string;
   mobile?: boolean;
+  onLogout?: () => void;
   onClose?: () => void;
 }
 
@@ -42,6 +43,7 @@ export function WorkspaceSidebar({
   userName = "Devaraj Padma",
   userEmail = "devaraj@telova.ai",
   mobile = false,
+  onLogout,
   onClose,
 }: WorkspaceSidebarProps) {
   return (
@@ -119,6 +121,7 @@ export function WorkspaceSidebar({
           </div>
           <button
             type="button"
+            onClick={onLogout}
             className="inline-flex items-center gap-2 rounded-xl border border-border px-3 py-2 text-xs font-semibold text-muted transition hover:text-text"
           >
             <LogOut className="size-3.5" />
