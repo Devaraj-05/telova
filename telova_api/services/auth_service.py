@@ -434,6 +434,16 @@ class UserAuthService:
         if self.settings.frontend_app_url:
             allowed_origins.add(self.settings.frontend_app_url.rstrip("/"))
         allowed_origins.add(f"{request.url.scheme}://{request.url.netloc}")
+        
+        # Always allow the origin that matches our strict google-web-client.json configuration
+        try:
+            config = self._resolve_google_oauth_client_config()
+            strict_uri = config["web"]["redirect_uris"][0]
+            strict_parsed = urlparse(strict_uri)
+            allowed_origins.add(f"{strict_parsed.scheme}://{strict_parsed.netloc}")
+        except Exception:
+            pass
+            
         return candidate_origin in allowed_origins
 
     def _build_frontend_redirect(
