@@ -79,7 +79,7 @@ def _verify_signed_payload(token: str, secret: str) -> dict[str, Any]:
     try:
         encoded_body, encoded_signature = token.split(".", maxsplit=1)
     except ValueError as exc:
-        raise HTTPException(status_code=401, detail="Invalid authentication token.") from exc
+        raise HTTPException(status_code=403, detail="Invalid authentication token.") from exc
 
     expected_signature = hmac.new(
         secret.encode("utf-8"),
@@ -90,16 +90,16 @@ def _verify_signed_payload(token: str, secret: str) -> dict[str, Any]:
         _urlsafe_b64encode(expected_signature),
         encoded_signature,
     ):
-        raise HTTPException(status_code=401, detail="Invalid authentication token.")
+        raise HTTPException(status_code=403, detail="Invalid authentication token.")
 
     try:
         payload = json.loads(_urlsafe_b64decode(encoded_body).decode("utf-8"))
     except (ValueError, json.JSONDecodeError) as exc:
-        raise HTTPException(status_code=401, detail="Invalid authentication token.") from exc
+        raise HTTPException(status_code=403, detail="Invalid authentication token.") from exc
 
     expires_at = payload.get("exp")
     if expires_at is not None and int(expires_at) < int(datetime.now(timezone.utc).timestamp()):
-        raise HTTPException(status_code=401, detail="Authentication token expired.")
+        raise HTTPException(status_code=403, detail="Authentication token expired.")
     return payload
 
 
@@ -141,7 +141,7 @@ def decode_oauth_state_token(token: str, secret: str) -> dict[str, Any]:
 def decode_access_token(token: str, secret: str) -> dict[str, Any]:
     payload = _verify_signed_payload(token, secret)
     if payload.get("kind") != "access":
-        raise HTTPException(status_code=401, detail="Invalid authentication token.")
+        raise HTTPException(status_code=403, detail="Invalid authentication token.")
     return payload
 
 
@@ -151,13 +151,13 @@ async def get_current_user(
 ):
     token = _auth_header_token(request)
     if not token:
-        raise HTTPException(status_code=401, detail="Authentication required.")
+        raise HTTPException(status_code=403, detail="Authentication required.")
 
     settings = get_settings()
     payload = decode_access_token(token, settings.auth_token_secret)
     user = await UserRepository(session).get(payload["sub"])
     if user is None:
-        raise HTTPException(status_code=401, detail="User account no longer exists.")
+        raise HTTPException(status_code=403, detail="User account no longer exists.")
 
     request.state.current_user = user
     return user
