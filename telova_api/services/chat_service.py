@@ -78,9 +78,13 @@ class TelovaChatService:
             self._model_name,
         )
 
+
         # Prefer API key (simplest, works without gcloud auth)
+        # MUST explicitly set vertexai=False because the SDK reads
+        # GOOGLE_GENAI_USE_VERTEXAI from the environment and would
+        # otherwise route to aiplatform.googleapis.com which rejects API keys.
         if api_key:
-            client = genai.Client(api_key=api_key)
+            client = genai.Client(api_key=api_key, vertexai=False)
         elif project_id:
             client = genai.Client(
                 vertexai=True,
