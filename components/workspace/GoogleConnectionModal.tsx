@@ -1,6 +1,6 @@
 "use client";
 
-import { CalendarDays, CheckCircle2, ExternalLink, ListTodo, X } from "lucide-react";
+import { CalendarDays, CheckCircle2, ExternalLink, ListTodo, NotebookPen, X } from "lucide-react";
 
 import type { GoogleConnectionStatus } from "@/lib/auth/types";
 import { cn } from "@/lib/utils";
@@ -16,6 +16,7 @@ interface GoogleConnectionModalProps {
 const TOOL_ROWS = [
   { key: "calendar_connected", label: "Google Calendar", Icon: CalendarDays },
   { key: "tasks_connected", label: "Google Tasks", Icon: ListTodo },
+  { key: "keep_connected", label: "Google Keep", Icon: NotebookPen },
 ] as const;
 
 export function GoogleConnectionModal({
@@ -38,10 +39,10 @@ export function GoogleConnectionModal({
         </button>
 
         <p className="text-xs font-semibold uppercase tracking-[0.28em] text-brand">
-          Google Workspace
+          Connect Your Tools
         </p>
         <h2 className="mt-3 text-xl font-semibold text-text">
-          Sync plans to your Google tools
+          Let Telova sync your execution plan
         </h2>
         <p className="mt-2 text-sm leading-6 text-muted">
           After you approve a goal, Telova can create calendar blocks, push task
@@ -61,7 +62,12 @@ export function GoogleConnectionModal({
                   <span className="rounded-xl bg-white/5 p-2 text-muted">
                     <Icon className="size-4" />
                   </span>
-                  <p className="text-sm font-medium text-text">{label}</p>
+                  <div>
+                    <p className="text-sm font-medium text-text">{label}</p>
+                    <p className="text-xs text-muted">
+                      {connected ? "Connected" : "Waiting for permission"}
+                    </p>
+                  </div>
                 </div>
                 <CheckCircle2
                   className={cn(
@@ -88,7 +94,7 @@ export function GoogleConnectionModal({
             className="inline-flex items-center gap-2 rounded-2xl bg-brand px-5 py-2.5 text-sm font-semibold text-white transition hover:bg-brand/90 disabled:cursor-not-allowed disabled:opacity-70"
           >
             <ExternalLink className="size-4" />
-            Connect
+            {isConnecting ? "Connecting..." : "Connect Google Workspace"}
           </button>
           <button
             type="button"
@@ -98,6 +104,10 @@ export function GoogleConnectionModal({
             Skip for now
           </button>
         </div>
+        <p className="mt-3 text-xs text-muted">
+          You can always connect later from Settings. Without Google tools,
+          Telova stores everything locally.
+        </p>
       </div>
     </div>
   );

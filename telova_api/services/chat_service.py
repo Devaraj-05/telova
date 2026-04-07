@@ -43,31 +43,44 @@ class TelovaChatService:
             or self.settings.gcp_project_id
             or os.environ.get("GOOGLE_CLOUD_PROJECT")
             or os.environ.get("GCLOUD_PROJECT")
-            or os.environ.get("DEVSHELL_PROJECT_ID")  # Cloud Shell auto-sets this
+            or os.environ.get("DEVSHELL_PROJECT_ID")
             or None
         )
 
     async def chat(self, *, user_message: str, history: list[dict[str, str]] | None = None) -> str:
-        """Send a message to the Vertex AI / Gemini model and return the response."""
+        """Send a message to the Gemini model and return the response."""
         try:
             return await self._call_model(user_message, history or [])
         except Exception as exc:
             logger.exception("Chat model call failed: %s", exc)
             return (
                 "I'm having trouble connecting to the AI service right now. "
-                "Please check that Vertex AI is enabled in your Google Cloud project "
-                "and that you've run `gcloud auth application-default login` in Cloud Shell."
+                f"Error: {type(exc).__name__}: {exc}"
             )
 
     async def _call_model(self, user_message: str, history: list[dict[str, str]]) -> str:
-        from google import genai
+        try:
+            from google import genai
+        except ImportError:
+            raise RuntimeError(
+                "google-genai package is not installed. "
+                "Run: pip install google-genai"
+            )
 
         project_id = self._resolve_project_id()
         location = self.settings.google_cloud_location or "us-central1"
+        api_key = self.settings.google_api_key
 
-        # Prefer API key (simplest, no auth setup needed)
-        if self.settings.google_api_key:
-            client = genai.Client(api_key=self.settings.google_api_key)
+        logger.info(
+            "Chat init: api_key=%s, project=%s, model=%s",
+            "set" if api_key else "unset",
+            project_id or "unset",
+            self._model_name,
+        )
+
+        # Prefer API key (simplest, works without gcloud auth)
+        if api_key:
+            client = genai.Client(api_key=api_key)
         elif project_id:
             client = genai.Client(
                 vertexai=True,
