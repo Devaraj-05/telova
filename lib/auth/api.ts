@@ -7,9 +7,9 @@ import type {
   SignupPayload,
 } from "@/lib/auth/types";
 
-const API_BASE_URL =
-  process.env.NEXT_PUBLIC_API_BASE_URL?.replace(/\/$/, "") ??
-  "http://127.0.0.1:8000";
+const API_BASE_URL = typeof window !== "undefined"
+  ? ""
+  : process.env.NEXT_PUBLIC_API_BASE_URL?.replace(/\/$/, "") ?? "http://127.0.0.1:8000";
 
 function buildApiUrl(path: string) {
   return `${API_BASE_URL}${path}`;
