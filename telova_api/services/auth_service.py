@@ -102,6 +102,8 @@ class UserAuthService:
 
         client_config = self._resolve_google_oauth_client_config()
         callback_uri = str(request.url_for("google_oauth_callback"))
+        if "cloudshell.dev" in callback_uri and callback_uri.startswith("http://"):
+            callback_uri = callback_uri.replace("http://", "https://", 1)
 
         try:
             from google_auth_oauthlib.flow import Flow
@@ -167,7 +169,10 @@ class UserAuthService:
             ) from exc
 
         flow = Flow.from_client_config(client_config, scopes=scopes, state=state_token)
-        flow.redirect_uri = str(request.url_for("google_oauth_callback"))
+        callback_uri = str(request.url_for("google_oauth_callback"))
+        if "cloudshell.dev" in callback_uri and callback_uri.startswith("http://"):
+            callback_uri = callback_uri.replace("http://", "https://", 1)
+        flow.redirect_uri = callback_uri
 
         # Restore the PKCE code_verifier that was stored in the state token
         # during create_google_authorization_url, so fetch_token can present
