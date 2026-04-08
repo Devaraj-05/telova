@@ -87,7 +87,7 @@ steps:
           --region ${_REGION} --format='value(status.url)')
         gcloud run services update telova-backend \
           --region ${_REGION} \
-          --update-env-vars "CORS_ALLOW_ORIGINS=$${FRONTEND_URL},http://localhost:3000,FRONTEND_APP_URL=$${FRONTEND_URL}"
+          --update-env-vars "^||^CORS_ALLOW_ORIGINS=$${FRONTEND_URL},http://localhost:3000||FRONTEND_APP_URL=$${FRONTEND_URL}"
     id: "deploy-frontend"
     waitFor: ["push-frontend", "deploy-backend"]
 
