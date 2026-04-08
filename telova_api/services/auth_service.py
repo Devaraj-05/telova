@@ -187,9 +187,17 @@ class UserAuthService:
         if code_verifier:
             flow.code_verifier = code_verifier
 
+        # Cloud Run terminates TLS at the load balancer and forwards plain
+        # HTTP to the container.  The OAuth library requires https, so we
+        # rebuild the URL with the scheme the original client actually used.
+        auth_response_url = str(request.url)
+        forwarded_proto = request.headers.get("x-forwarded-proto")
+        if forwarded_proto == "https" and auth_response_url.startswith("http://"):
+            auth_response_url = "https://" + auth_response_url[len("http://"):]
+
         await asyncio.to_thread(
             flow.fetch_token,
-            authorization_response=str(request.url),
+            authorization_response=auth_response_url,
         )
         credentials = flow.credentials
         profile = await self._fetch_google_profile(credentials.token)
