@@ -298,6 +298,12 @@ export function useWorkspaceController(userId: string | null) {
         aiPlan = buildDynamicIntro(completedDraft.prompt, completedDraft);
       }
 
+      const updatedDraft = {
+        ...completedDraft,
+        detailedPlanText: aiPlan,
+      };
+      setDraft(updatedDraft);
+
       pushMessages([
         {
           id: createMessageId("agent_reply"),

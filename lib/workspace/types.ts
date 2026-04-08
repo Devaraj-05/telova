@@ -199,6 +199,7 @@ export interface GoalDraft {
   dailyHours: string | null;
   includeWeekends: boolean | null;
   calendarSync: boolean | null;
+  detailedPlanText: string | null;
 }
 
 interface MessageBase {
@@ -364,4 +365,5 @@ export interface GoalCreatePayload {
   deadline?: string | null;
   priority?: string | null;
   constraints?: string[];
+  detailed_plan_text?: string | null;
 }

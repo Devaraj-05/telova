@@ -26,6 +26,24 @@ class GoalDecompositionResult:
     dag: dict
 
 
+DAY_LINE_RE = re.compile(
+    r"^\s*(?:[-*]\s*)?(?:\*\*)?Day\s+(?P<number>\d+)\s*\((?P<label>[^)]*)\)\s*:\s*(?:\*\*)?\s*(?P<body>.+?)\s*(?:\*\*)?\s*$",
+    re.IGNORECASE,
+)
+PHASE_LINE_RE = re.compile(
+    r"^\s*(?:[-*]\s*)?(?:\*\*)?Phase\s+(?P<number>\d+)\s*:\s*(?P<title>.+?)(?:\s+[—–-]\s+Week.*)?\s*(?:\*\*)?\s*$",
+    re.IGNORECASE,
+)
+DURATION_RE = re.compile(
+    r"^(?P<title>.+?)\s*[—–-]\s*(?P<hours>\d+(?:\.\d+)?)\s*(?:h|hr|hrs|hour|hours)\.?\s*(?P<description>.*)$",
+    re.IGNORECASE,
+)
+DEFAULT_HOURS_RE = re.compile(
+    r"(?:Daily Commitment|Hours per day)\s*:\s*(?P<hours>\d+(?:\.\d+)?)\s*(?:hours?|hrs?)",
+    re.IGNORECASE,
+)
+
+
 DOMAIN_KEYWORDS = {
     "career_growth": ("promoted", "promotion", "senior engineer", "staff", "career"),
     "product_launch": ("launch", "ship", "deploy", "release", "mvp", "startup"),
@@ -284,7 +302,21 @@ class GoalDecomposerAgent:
         description: str | None,
         deadline: datetime | None,
         busy_windows: list[BusyWindow],
+        detailed_plan_text: str | None = None,
     ) -> GoalDecompositionResult:
+        if detailed_plan_text:
+            parsed_blueprint = self.parse_detailed_plan_text(detailed_plan_text)
+            if parsed_blueprint:
+                return self.render_plan_from_blueprint(
+                    domain=self.classify_goal(goal_text),
+                    goal_text=goal_text,
+                    description=description,
+                    deadline=deadline,
+                    busy_windows=busy_windows,
+                    blueprint=parsed_blueprint,
+                    append_goal_context=False,
+                )
+
         domain = self.classify_goal(goal_text)
         blueprint = BLUEPRINTS[domain]
         return self.render_plan_from_blueprint(
@@ -305,6 +337,7 @@ class GoalDecomposerAgent:
         deadline: datetime | None,
         busy_windows: list[BusyWindow],
         blueprint: list[BlueprintTask],
+        append_goal_context: bool = True,
     ) -> GoalDecompositionResult:
         resolved_deadline = self.scheduler.ensure_utc(
             deadline or self.infer_deadline(goal_text)
@@ -346,7 +379,7 @@ class GoalDecomposerAgent:
             task_end_by_key[draft.key] = end_at
 
             rendered_description = draft.description
-            if description:
+            if description and append_goal_context:
                 rendered_description = (
                     f"{draft.description} Goal context: {description.strip()}"
                 )
@@ -397,5 +430,115 @@ class GoalDecomposerAgent:
             tasks=scheduled_tasks,
             dag=dag,
         )
+
+    def parse_detailed_plan_text(self, plan_text: str) -> list[BlueprintTask]:
+        current_phase = "execution"
+        current_phase_number = 1
+        default_minutes = self._extract_default_minutes(plan_text)
+        parsed_tasks: list[BlueprintTask] = []
+        previous_key: str | None = None
+
+        for raw_line in plan_text.splitlines():
+            line = raw_line.strip()
+            if not line:
+                continue
+
+            phase_match = PHASE_LINE_RE.match(line)
+            if phase_match:
+                current_phase_number = int(phase_match.group("number"))
+                current_phase = self._normalize_phase_name(
+                    phase_match.group("title"),
+                    current_phase_number,
+                )
+                continue
+
+            day_match = DAY_LINE_RE.match(line)
+            if not day_match:
+                continue
+
+            day_number = int(day_match.group("number"))
+            body = day_match.group("body").strip()
+            milestone = bool(
+                re.search(r"(✅|☑️|✔️|\bmilestone\b)", body, re.IGNORECASE)
+            )
+            body = re.sub(
+                r"\s*(?:✅|☑️|✔️)\s*Milestone\b",
+                "",
+                body,
+                flags=re.IGNORECASE,
+            ).strip()
+            body = re.sub(r"\bMilestone\b", "", body, flags=re.IGNORECASE).strip()
+
+            title, description, estimated_minutes = self._parse_day_body(
+                body,
+                default_minutes=default_minutes,
+            )
+            if not title:
+                continue
+
+            duration_hours = max(estimated_minutes / 60, 0.5)
+            duration_label = (
+                str(int(duration_hours))
+                if float(duration_hours).is_integer()
+                else f"{duration_hours:.1f}".rstrip("0").rstrip(".")
+            )
+            task_title = f"Day {day_number}: {title} — {duration_label}h"
+            task_key = self._build_day_task_key(day_number, title)
+            depends_on = (previous_key,) if previous_key else ()
+
+            parsed_tasks.append(
+                BlueprintTask(
+                    key=task_key,
+                    title=task_title,
+                    description=description,
+                    phase=current_phase,
+                    estimated_minutes=estimated_minutes,
+                    depends_on=depends_on,
+                    milestone=milestone,
+                )
+            )
+            previous_key = task_key
+
+        return parsed_tasks
+
+    def _extract_default_minutes(self, plan_text: str) -> int:
+        match = DEFAULT_HOURS_RE.search(plan_text)
+        if not match:
+            return 120
+        return max(int(round(float(match.group("hours")) * 60)), 30)
+
+    def _parse_day_body(
+        self,
+        body: str,
+        *,
+        default_minutes: int,
+    ) -> tuple[str, str, int]:
+        match = DURATION_RE.match(body)
+        if match:
+            title = match.group("title").strip(" -*")
+            description = (
+                match.group("description").strip()
+                or "Complete the planned focus block for this day."
+            )
+            minutes = max(int(round(float(match.group("hours")) * 60)), 30)
+            return title, description, minutes
+
+        cleaned = body.strip(" -*")
+        return cleaned, "Complete the planned focus block for this day.", default_minutes
+
+    def _normalize_phase_name(self, title: str, number: int) -> str:
+        slug = self._slugify(title)
+        if not slug:
+            return f"phase_{number}"
+        return f"phase_{number}_{'_'.join(slug.split('_')[:4])}"
+
+    def _build_day_task_key(self, day_number: int, title: str) -> str:
+        slug = self._slugify(title)
+        if not slug:
+            return f"day_{day_number}"
+        return f"day_{day_number}_{'_'.join(slug.split('_')[:5])}"
+
+    def _slugify(self, value: str) -> str:
+        return re.sub(r"[^a-z0-9]+", "_", value.lower()).strip("_")
 
 

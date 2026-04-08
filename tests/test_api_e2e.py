@@ -120,6 +120,46 @@ def test_goal_preview_then_create_flow(client: TestClient):
     assert len(goal_list_after.json()) == before_count + 1
 
 
+def test_goal_plan_uses_detailed_day_plan_for_tasks_and_calendar_titles(client: TestClient):
+    detailed_plan_text = (
+        "Timeline: 2 months\n"
+        "Daily Commitment: 2 hours per day\n"
+        "Phase 1: AI/ML Foundations — Week 1-2\n"
+        "Day 1 (Mon): Python Data Structures & Algorithms Refresher — 2h. "
+        "Review Python lists, dictionaries, sets, and tuples.\n"
+        "Day 2 (Tue): Object-Oriented Programming in Python — 2h. "
+        "Implement a simple bank account class system."
+    )
+
+    preview_response = client.post(
+        "/api/v1/goals/preview",
+        json={
+            "user_id": "demo-user",
+            "goal": "I want to Get a Job for AI Engineer Role",
+            "description": "Need a day-by-day schedule.",
+            "detailed_plan_text": detailed_plan_text,
+        },
+    )
+    assert preview_response.status_code == 200
+    preview = preview_response.json()
+    assert preview["tasks"][0]["title"] == "Day 1: Python Data Structures & Algorithms Refresher — 2h"
+    assert preview["tasks"][1]["title"] == "Day 2: Object-Oriented Programming in Python — 2h"
+
+    create_response = client.post(
+        "/api/v1/goals",
+        json={
+            "user_id": "demo-user",
+            "goal": "I want to Get a Job for AI Engineer Role",
+            "description": "Need a day-by-day schedule.",
+            "detailed_plan_text": detailed_plan_text,
+        },
+    )
+    assert create_response.status_code == 200
+    created = create_response.json()
+    assert created["tasks"][0]["title"] == "Day 1: Python Data Structures & Algorithms Refresher — 2h"
+    assert created["calendar_events"][0]["title"].startswith("AI Engineer: Day 1:")
+
+
 def test_notes_create_and_update_flow(client: TestClient):
     note_response = client.post(
         "/api/v1/notes",

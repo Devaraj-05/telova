@@ -52,12 +52,14 @@ class DeterministicPlanningRuntime:
         description: str | None,
         deadline,
         busy_windows: list[BusyWindow],
+        detailed_plan_text: str | None = None,
     ) -> GoalDecompositionResult:
         return self.goal_decomposer.build_plan(
             goal_text=goal_text,
             description=description,
             deadline=deadline,
             busy_windows=busy_windows,
+            detailed_plan_text=detailed_plan_text,
         )
 
     def describe_status(self) -> PlanningRuntimeStatus:
@@ -87,7 +89,17 @@ class GoogleAdkPlanningRuntime:
         description: str | None,
         deadline,
         busy_windows: list[BusyWindow],
+        detailed_plan_text: str | None = None,
     ) -> GoalDecompositionResult:
+        if detailed_plan_text:
+            return self.goal_decomposer.build_plan(
+                goal_text=goal_text,
+                description=description,
+                deadline=deadline,
+                busy_windows=busy_windows,
+                detailed_plan_text=detailed_plan_text,
+            )
+
         try:
             blueprint = await self._generate_blueprint(goal_text, description)
         except Exception:
@@ -99,6 +111,7 @@ class GoogleAdkPlanningRuntime:
                 description=description,
                 deadline=deadline,
                 busy_windows=busy_windows,
+                detailed_plan_text=detailed_plan_text,
             )
 
         domain = blueprint.domain or self.goal_decomposer.classify_goal(goal_text)

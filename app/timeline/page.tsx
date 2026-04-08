@@ -3,49 +3,64 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import {
+  CalendarRange,
+  CheckCircle2,
   ChevronLeft,
   ChevronRight,
-  CalendarRange,
-  Clock,
-  CheckCircle2,
   Circle,
+  Clock,
 } from "lucide-react";
 
 import { useAuth } from "@/components/auth/AuthProvider";
 import { RequireAuth } from "@/components/auth/RequireAuth";
 import { WorkspaceSidebar } from "@/components/workspace/WorkspaceSidebar";
+import { fetchDashboard, fetchTasks } from "@/lib/workspace/api";
+import type { DashboardRead, TaskRead } from "@/lib/workspace/types";
 
 interface CalendarTask {
   id: string;
   title: string;
   durationLabel: string;
   taskType: string;
-  date: string; // ISO date
+  date: string;
   status: "pending" | "done";
+  details?: string;
   specificTasks?: string[];
+  timeLabel?: string;
+  startsAt?: string;
+  goalId?: string;
+  goalTitle?: string;
 }
 
 interface GoalMeta {
+  id?: string;
   title: string;
-  deadline: string;
+  deadline: string | null;
   tasks: CalendarTask[];
 }
 
 function parseStoredGoal(): GoalMeta | null {
   try {
     const raw = localStorage.getItem("telova_created_goal");
-    if (raw) return JSON.parse(raw);
+    if (raw) {
+      const parsed = JSON.parse(raw) as GoalMeta;
+      return {
+        id: parsed.id,
+        title: parsed.title,
+        deadline: parsed.deadline ?? null,
+        tasks: parsed.tasks ?? [],
+      };
+    }
 
-    // Fallback: extract from chat messages
     const msgs = localStorage.getItem("telova_chat_messages");
     if (!msgs) return null;
-    const messages = JSON.parse(msgs) as Array<{ type: string; data?: any }>;
-    const syncMsg = messages.find((m) => m.type === "sync_success");
+    const messages = JSON.parse(msgs) as Array<{ type: string; data?: { summary?: string } }>;
+    const syncMsg = messages.find((message) => message.type === "sync_success");
     if (!syncMsg) return null;
 
     return {
       title: syncMsg.data?.summary ?? "Your Goal",
-      deadline: new Date(Date.now() + 60 * 24 * 60 * 60 * 1000).toISOString(),
+      deadline: null,
       tasks: [],
     };
   } catch {
@@ -56,8 +71,10 @@ function parseStoredGoal(): GoalMeta | null {
 function parseStoredTimelineTasks(): CalendarTask[] {
   try {
     const stored = localStorage.getItem("telova_timeline_tasks");
-    if (stored) return JSON.parse(stored);
-    return [];
+    if (!stored) {
+      return [];
+    }
+    return JSON.parse(stored) as CalendarTask[];
   } catch {
     return [];
   }
@@ -68,7 +85,7 @@ function getDaysInMonth(year: number, month: number) {
 }
 
 function getFirstDayOfMonth(year: number, month: number) {
-  return new Date(year, month, 1).getDay(); // 0=Sun
+  return new Date(year, month, 1).getDay();
 }
 
 const MONTH_NAMES = [
@@ -81,6 +98,88 @@ function toDateStr(year: number, month: number, day: number) {
   return `${year}-${String(month + 1).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
 }
 
+function humanizePhase(phase: string) {
+  return phase
+    .replace(/_/g, " ")
+    .replace(/\b\w/g, (character) => character.toUpperCase());
+}
+
+function splitTaskDetails(description: string): string[] {
+  return description
+    .split(".")
+    .map((part) => part.trim())
+    .filter((part) => part.length > 4)
+    .slice(0, 4);
+}
+
+function formatTimeRange(startIso: string | null, endIso: string | null) {
+  if (!startIso || !endIso) {
+    return null;
+  }
+
+  const start = new Date(startIso);
+  const end = new Date(endIso);
+  return `${start.toLocaleTimeString("en-US", {
+    hour: "numeric",
+    minute: "2-digit",
+  })} - ${end.toLocaleTimeString("en-US", {
+    hour: "numeric",
+    minute: "2-digit",
+  })}`;
+}
+
+function mapTaskToCalendarTask(task: TaskRead, goalTitle?: string): CalendarTask {
+  return {
+    id: task.id,
+    title: task.title,
+    durationLabel: `${Math.max(1, Math.round(task.estimated_minutes / 60))} hr`,
+    taskType: humanizePhase(task.phase),
+    date:
+      task.scheduled_start?.slice(0, 10) ??
+      new Date().toISOString().slice(0, 10),
+    status: task.status === "done" ? "done" : "pending",
+    details: task.description,
+    specificTasks: splitTaskDetails(task.description),
+    timeLabel: formatTimeRange(task.scheduled_start, task.scheduled_end) ?? undefined,
+    startsAt: task.scheduled_start ?? undefined,
+    goalId: task.goal_id,
+    goalTitle,
+  };
+}
+
+function buildGoalMeta(
+  dashboard: DashboardRead | null,
+  tasks: CalendarTask[],
+  fallback: GoalMeta | null,
+): GoalMeta | null {
+  const activeGoal = dashboard?.goals?.[0];
+  if (activeGoal) {
+    return {
+      id: activeGoal.id,
+      title: activeGoal.title,
+      deadline: activeGoal.deadline,
+      tasks,
+    };
+  }
+
+  if (fallback) {
+    return {
+      ...fallback,
+      tasks: tasks.length > 0 ? tasks : fallback.tasks,
+    };
+  }
+
+  if (tasks.length > 0) {
+    return {
+      title: tasks[0].goalTitle ?? "Your Goal",
+      deadline: null,
+      tasks,
+    };
+  }
+
+  return null;
+}
+
 export default function TimelinePage() {
   const { user, logout } = useAuth();
   const [goalMeta, setGoalMeta] = useState<GoalMeta | null>(null);
@@ -90,51 +189,104 @@ export default function TimelinePage() {
   const [view, setView] = useState<"month" | "week">("month");
 
   useEffect(() => {
-    const meta = parseStoredGoal();
-    setGoalMeta(meta);
-    const storedTasks = parseStoredTimelineTasks();
-    setTasks(storedTasks);
-    // default select today
+    const fallbackGoal = parseStoredGoal();
+    const fallbackTasks = parseStoredTimelineTasks();
     const today = new Date();
-    setSelectedDate(toDateStr(today.getFullYear(), today.getMonth(), today.getDate()));
-  }, []);
+    const todayStr = toDateStr(today.getFullYear(), today.getMonth(), today.getDate());
+
+    setGoalMeta(fallbackGoal);
+    setTasks(fallbackTasks);
+    setSelectedDate(fallbackTasks[0]?.date ?? todayStr);
+
+    if (!user?.id) {
+      return;
+    }
+
+    let cancelled = false;
+
+    void (async () => {
+      try {
+        const [dashboard, backendTasks] = await Promise.all([
+          fetchDashboard(user.id),
+          fetchTasks(user.id),
+        ]);
+
+        if (cancelled) {
+          return;
+        }
+
+        const goalTitleById = new Map(
+          dashboard.goals.map((goal) => [goal.id, goal.title]),
+        );
+        const scheduledTasks = backendTasks
+          .filter((task) => Boolean(task.scheduled_start))
+          .sort((left, right) =>
+            (left.scheduled_start ?? "").localeCompare(right.scheduled_start ?? ""),
+          )
+          .map((task) => mapTaskToCalendarTask(task, goalTitleById.get(task.goal_id)));
+
+        const nextTasks = scheduledTasks.length > 0 ? scheduledTasks : fallbackTasks;
+        setTasks(nextTasks);
+        setGoalMeta(buildGoalMeta(dashboard, nextTasks, fallbackGoal));
+        setSelectedDate((current) =>
+          current && nextTasks.some((task) => task.date === current)
+            ? current
+            : nextTasks[0]?.date ?? current ?? todayStr,
+        );
+      } catch {
+        if (!cancelled) {
+          setGoalMeta(buildGoalMeta(null, fallbackTasks, fallbackGoal));
+        }
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [user?.id]);
 
   const year = viewDate.getFullYear();
   const month = viewDate.getMonth();
   const daysInMonth = getDaysInMonth(year, month);
-  const firstDay = getFirstDayOfMonth(year, month); // 0=Sun
+  const firstDay = getFirstDayOfMonth(year, month);
 
   const prevMonth = () => setViewDate(new Date(year, month - 1, 1));
   const nextMonth = () => setViewDate(new Date(year, month + 1, 1));
 
-  // tasks indexed by date string
   const tasksByDate: Record<string, CalendarTask[]> = {};
   for (const task of tasks) {
-    const d = task.date?.slice(0, 10);
-    if (d) {
-      tasksByDate[d] = tasksByDate[d] ?? [];
-      tasksByDate[d].push(task);
+    const dateKey = task.date?.slice(0, 10);
+    if (!dateKey) {
+      continue;
     }
+    tasksByDate[dateKey] = tasksByDate[dateKey] ?? [];
+    tasksByDate[dateKey].push(task);
   }
+
+  Object.values(tasksByDate).forEach((items) => {
+    items.sort((left, right) => (left.startsAt ?? "").localeCompare(right.startsAt ?? ""));
+  });
 
   const selectedTasks = selectedDate ? (tasksByDate[selectedDate] ?? []) : [];
   const today = new Date();
   const todayStr = toDateStr(today.getFullYear(), today.getMonth(), today.getDate());
 
-  // Build calendar grid (6 rows × 7 cols)
   const cells: Array<{ day: number | null; dateStr: string | null }> = [];
-  for (let i = 0; i < firstDay; i++) cells.push({ day: null, dateStr: null });
-  for (let d = 1; d <= daysInMonth; d++) {
-    cells.push({ day: d, dateStr: toDateStr(year, month, d) });
+  for (let index = 0; index < firstDay; index += 1) {
+    cells.push({ day: null, dateStr: null });
   }
-  while (cells.length % 7 !== 0) cells.push({ day: null, dateStr: null });
+  for (let day = 1; day <= daysInMonth; day += 1) {
+    cells.push({ day, dateStr: toDateStr(year, month, day) });
+  }
+  while (cells.length % 7 !== 0) {
+    cells.push({ day: null, dateStr: null });
+  }
 
   const hasTasks = tasks.length > 0;
 
   return (
     <RequireAuth>
       <div className="flex min-h-screen bg-canvas text-text">
-        {/* Sidebar */}
         <div className="hidden xl:block">
           <WorkspaceSidebar
             activeItem="timeline"
@@ -144,9 +296,7 @@ export default function TimelinePage() {
           />
         </div>
 
-        {/* Main */}
         <main className="flex min-h-screen flex-1 flex-col overflow-hidden">
-          {/* Header */}
           <div className="border-b border-border px-6 py-4">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-3">
@@ -178,9 +328,7 @@ export default function TimelinePage() {
           </div>
 
           <div className="flex min-h-0 flex-1">
-            {/* Calendar Panel */}
             <div className="flex min-h-0 flex-1 flex-col overflow-auto p-6">
-              {/* Month navigation */}
               <div className="mb-4 flex items-center justify-between">
                 <button
                   type="button"
@@ -201,27 +349,30 @@ export default function TimelinePage() {
                 </button>
               </div>
 
-              {/* Day headers */}
               <div className="mb-2 grid grid-cols-7 gap-1">
-                {DAY_NAMES.map((d) => (
-                  <div key={d} className="py-1 text-center text-xs font-semibold uppercase tracking-wide text-muted">
-                    {d}
+                {DAY_NAMES.map((dayName) => (
+                  <div
+                    key={dayName}
+                    className="py-1 text-center text-xs font-semibold uppercase tracking-wide text-muted"
+                  >
+                    {dayName}
                   </div>
                 ))}
               </div>
 
-              {/* Calendar grid */}
               <div className="grid grid-cols-7 gap-1">
-                {cells.map((cell, idx) => {
+                {cells.map((cell, index) => {
                   if (!cell.day || !cell.dateStr) {
-                    return <div key={idx} className="h-20 rounded-xl" />;
+                    return <div key={index} className="h-20 rounded-xl" />;
                   }
+
                   const cellTasks = tasksByDate[cell.dateStr] ?? [];
                   const isToday = cell.dateStr === todayStr;
                   const isSelected = cell.dateStr === selectedDate;
+
                   return (
                     <button
-                      key={idx}
+                      key={index}
                       type="button"
                       onClick={() => setSelectedDate(cell.dateStr)}
                       className={`relative flex h-20 flex-col rounded-xl border p-2 text-left transition ${
@@ -263,7 +414,6 @@ export default function TimelinePage() {
                 })}
               </div>
 
-              {/* Empty state */}
               {!hasTasks && (
                 <div className="mt-8 rounded-2xl border border-dashed border-border p-8 text-center">
                   <CalendarRange className="mx-auto size-8 text-muted/40" />
@@ -281,12 +431,11 @@ export default function TimelinePage() {
               )}
             </div>
 
-            {/* Day Detail Panel */}
-            <div className="hidden w-80 shrink-0 border-l border-border lg:flex lg:flex-col">
+            <div className="hidden w-96 shrink-0 border-l border-border lg:flex lg:flex-col">
               <div className="border-b border-border px-4 py-3">
                 <p className="text-sm font-semibold text-text">
                   {selectedDate
-                    ? new Date(selectedDate + "T00:00:00").toLocaleDateString("en-US", {
+                    ? new Date(`${selectedDate}T00:00:00`).toLocaleDateString("en-US", {
                         weekday: "long",
                         month: "long",
                         day: "numeric",
@@ -313,6 +462,9 @@ export default function TimelinePage() {
                             <p className="mt-0.5 text-xs text-muted">
                               {task.taskType} · {task.durationLabel}
                             </p>
+                            {task.timeLabel && (
+                              <p className="mt-1 text-xs text-muted">{task.timeLabel}</p>
+                            )}
                           </div>
                           {task.status === "done" ? (
                             <CheckCircle2 className="mt-0.5 size-4 shrink-0 text-emerald-400" />
@@ -320,12 +472,22 @@ export default function TimelinePage() {
                             <Circle className="mt-0.5 size-4 shrink-0 text-muted/40" />
                           )}
                         </div>
+
+                        {task.details && (
+                          <p className="mt-3 text-xs leading-5 text-muted">
+                            {task.details}
+                          </p>
+                        )}
+
                         {task.specificTasks && task.specificTasks.length > 0 && (
-                          <ul className="mt-2 space-y-1">
-                            {task.specificTasks.map((t, i) => (
-                              <li key={i} className="flex items-start gap-1.5 text-xs text-muted">
+                          <ul className="mt-3 space-y-1">
+                            {task.specificTasks.map((item, index) => (
+                              <li
+                                key={`${task.id}-${index}`}
+                                className="flex items-start gap-1.5 text-xs text-muted"
+                              >
                                 <span className="mt-1 size-1 shrink-0 rounded-full bg-brand/50" />
-                                {t}
+                                {item}
                               </li>
                             ))}
                           </ul>
@@ -336,22 +498,25 @@ export default function TimelinePage() {
                 )}
               </div>
 
-              {/* Goal summary at bottom */}
               {goalMeta && (
                 <div className="border-t border-border p-4">
-                  <p className="text-xs font-semibold uppercase tracking-wide text-muted">Active Goal</p>
-                  <p className="mt-1 text-sm text-text line-clamp-2">{goalMeta.title}</p>
-                  <div className="mt-2 flex items-center gap-1.5">
-                    <Clock className="size-3 text-muted" />
-                    <p className="text-xs text-muted">
-                      Deadline:{" "}
-                      {new Date(goalMeta.deadline).toLocaleDateString("en-US", {
-                        month: "short",
-                        day: "numeric",
-                        year: "numeric",
-                      })}
-                    </p>
-                  </div>
+                  <p className="text-xs font-semibold uppercase tracking-wide text-muted">
+                    Active Goal
+                  </p>
+                  <p className="mt-1 line-clamp-2 text-sm text-text">{goalMeta.title}</p>
+                  {goalMeta.deadline && (
+                    <div className="mt-2 flex items-center gap-1.5">
+                      <Clock className="size-3 text-muted" />
+                      <p className="text-xs text-muted">
+                        Deadline:{" "}
+                        {new Date(goalMeta.deadline).toLocaleDateString("en-US", {
+                          month: "short",
+                          day: "numeric",
+                          year: "numeric",
+                        })}
+                      </p>
+                    </div>
+                  )}
                 </div>
               )}
             </div>

@@ -27,6 +27,7 @@ class GoalCreateRequest(BaseModel):
     deadline: datetime | None = None
     priority: str | None = None
     constraints: list[str] = Field(default_factory=list)
+    detailed_plan_text: str | None = None
 
 
 class GoalPreviewTaskRead(BaseModel):

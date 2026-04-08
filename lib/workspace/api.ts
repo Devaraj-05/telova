@@ -4,6 +4,7 @@ import {
   GoalPlanPreviewResponse,
   GoalPlanResponse,
   SystemStatusRead,
+  TaskRead,
 } from "@/lib/workspace/types";
 
 // Empty string = use relative URLs routed through Next.js proxy rewrites
@@ -39,6 +40,12 @@ export function fetchDashboard(userId: string) {
 export function fetchSystemStatus(userId: string) {
   return apiRequest<SystemStatusRead>(
     `/api/v1/system/status?user_id=${encodeURIComponent(userId)}`,
+  );
+}
+
+export function fetchTasks(userId: string) {
+  return apiRequest<TaskRead[]>(
+    `/api/v1/tasks?user_id=${encodeURIComponent(userId)}`,
   );
 }
 

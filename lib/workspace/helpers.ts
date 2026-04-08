@@ -56,6 +56,7 @@ export function buildDraftFromPrompt(
     dailyHours: null,
     includeWeekends: null,
     calendarSync: null,
+    detailedPlanText: null,
   };
 }
 
@@ -67,6 +68,7 @@ export function buildGoalCreatePayload(draft: GoalDraft): GoalCreatePayload {
     deadline: draft.deadlineIso,
     priority: draft.priority,
     constraints: draft.constraints,
+    detailed_plan_text: draft.detailedPlanText,
   };
 }
 
@@ -603,7 +605,9 @@ export function buildMockPreview(draft: GoalDraft): GoalPlanPreviewResponse {
 
   const totalDays = Math.ceil((deadline.getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
   const domain = detectGoalDomain(draft.prompt);
-  const tasks = generateGoalTasks(domain, draft.prompt, totalDays, now, draft);
+  const tasks =
+    parseDetailedPlanTasks(draft, now) ??
+    generateGoalTasks(domain, draft.prompt, totalDays, now, draft);
 
   return {
     domain,
@@ -662,6 +666,12 @@ export function buildMockCreateResponse(
       taskType: humanizePhase(task.phase),
       date: task.scheduled_start?.slice(0, 10) ?? createdAt.slice(0, 10),
       status: "pending" as const,
+      details: task.description,
+      specificTasks: splitTaskDetails(task.description),
+      timeLabel:
+        task.scheduled_start && task.scheduled_end
+          ? formatTimeRange(task.scheduled_start, task.scheduled_end)
+          : undefined,
     }));
     localStorage.setItem("telova_timeline_tasks", JSON.stringify(calendarTasks));
     localStorage.setItem(
@@ -804,6 +814,166 @@ interface PreviewTask {
   scheduled_end: string;
   milestone: boolean;
   order_index: number;
+}
+
+const DETAILED_DAY_LINE_RE =
+  /^\s*(?:[-*]\s*)?(?:\*\*)?Day\s+(\d+)\s*\(([^)]*)\)\s*:\s*(?:\*\*)?\s*(.+?)\s*(?:\*\*)?\s*$/i;
+const DETAILED_PHASE_LINE_RE =
+  /^\s*(?:[-*]\s*)?(?:\*\*)?Phase\s+(\d+)\s*:\s*(.+?)(?:\s+[—–-]\s+Week.*)?\s*(?:\*\*)?\s*$/i;
+const DETAILED_DURATION_RE =
+  /^(.+?)\s*[—–-]\s*(\d+(?:\.\d+)?)\s*(?:h|hr|hrs|hour|hours)\.?\s*(.*)$/i;
+const DETAILED_DEFAULT_HOURS_RE =
+  /(?:Daily Commitment|Hours per day)\s*:\s*(\d+(?:\.\d+)?)\s*(?:hours?|hrs?)/i;
+
+function parseDetailedPlanTasks(
+  draft: GoalDraft,
+  startDate: Date,
+): PreviewTask[] | null {
+  const planText = draft.detailedPlanText?.trim();
+  if (!planText) {
+    return null;
+  }
+
+  const explicitHours = extractHoursNumber(draft.dailyHours);
+  const fallbackHoursMatch = planText.match(DETAILED_DEFAULT_HOURS_RE);
+  const defaultMinutes = Math.max(
+    30,
+    Math.round(
+      (explicitHours ?? Number(fallbackHoursMatch?.[1] ?? "2")) * 60,
+    ),
+  );
+
+  const tasks: Array<{
+    dayNumber: number;
+    key: string;
+    title: string;
+    description: string;
+    phase: string;
+    estimatedMinutes: number;
+    milestone: boolean;
+  }> = [];
+  let currentPhase = "execution";
+
+  for (const rawLine of planText.split(/\r?\n/)) {
+    const line = rawLine.trim();
+    if (!line) {
+      continue;
+    }
+
+    const phaseMatch = line.match(DETAILED_PHASE_LINE_RE);
+    if (phaseMatch) {
+      currentPhase = normalizeDetailedPhase(phaseMatch[2], phaseMatch[1]);
+      continue;
+    }
+
+    const dayMatch = line.match(DETAILED_DAY_LINE_RE);
+    if (!dayMatch) {
+      continue;
+    }
+
+    const dayNumber = Number(dayMatch[1]);
+    let body = dayMatch[3].trim();
+    const milestone = /(✅|☑️|✔️|\bmilestone\b)/i.test(body);
+    body = body
+      .replace(/\s*(?:✅|☑️|✔️)\s*Milestone\b/gi, "")
+      .replace(/\bMilestone\b/gi, "")
+      .trim();
+
+    const durationMatch = body.match(DETAILED_DURATION_RE);
+    const rawTitle = (durationMatch?.[1] ?? body).trim().replace(/^[*-]\s*/, "");
+    const detail = (durationMatch?.[3] ?? "").trim();
+    const estimatedMinutes = durationMatch
+      ? Math.max(30, Math.round(Number(durationMatch[2]) * 60))
+      : defaultMinutes;
+    const durationHours = estimatedMinutes / 60;
+    const durationLabel = Number.isInteger(durationHours)
+      ? String(durationHours)
+      : durationHours.toFixed(1).replace(/\.0$/, "");
+
+    if (!rawTitle) {
+      continue;
+    }
+
+    tasks.push({
+      dayNumber,
+      key: buildDetailedTaskKey(dayNumber, rawTitle),
+      title: `Day ${dayNumber}: ${rawTitle} — ${durationLabel}h`,
+      description: detail || "Complete the planned focus block for this day.",
+      phase: currentPhase,
+      estimatedMinutes,
+      milestone,
+    });
+  }
+
+  if (tasks.length === 0) {
+    return null;
+  }
+
+  const scheduledDates = buildAllowedScheduleDates(tasks.length, startDate, draft);
+
+  return tasks.map((task, index) => {
+    const scheduledDay = scheduledDates[index] ?? scheduledDates[scheduledDates.length - 1];
+    const start = new Date(scheduledDay);
+    const end = new Date(start.getTime() + task.estimatedMinutes * 60 * 1000);
+    return {
+      key: task.key,
+      title: task.title,
+      description: task.description,
+      phase: task.phase,
+      estimated_minutes: task.estimatedMinutes,
+      depends_on: index > 0 ? [tasks[index - 1].key] : [],
+      scheduled_start: start.toISOString(),
+      scheduled_end: end.toISOString(),
+      milestone: task.milestone,
+      order_index: index,
+    };
+  });
+}
+
+function buildAllowedScheduleDates(
+  count: number,
+  startDate: Date,
+  draft: GoalDraft,
+): Date[] {
+  const dates: Date[] = [];
+  const weekendsOnly = draft.constraints.some((constraint) =>
+    constraint.toLowerCase().includes("weekends only"),
+  );
+
+  for (let offset = 0; dates.length < count && offset < count * 4 + 30; offset += 1) {
+    const candidate = new Date(startDate.getTime() + offset * 24 * 60 * 60 * 1000);
+    const dayOfWeek = candidate.getDay();
+    const isWeekend = dayOfWeek === 0 || dayOfWeek === 6;
+
+    if (weekendsOnly) {
+      if (!isWeekend) {
+        continue;
+      }
+    } else if (draft.includeWeekends === false && isWeekend) {
+      continue;
+    }
+
+    dates.push(candidate);
+  }
+
+  return dates.length > 0 ? dates : [new Date(startDate)];
+}
+
+function normalizeDetailedPhase(title: string, phaseNumber: string): string {
+  const slug = slugifyDetailedValue(title);
+  return slug ? `phase_${phaseNumber}_${slug}` : `phase_${phaseNumber}`;
+}
+
+function buildDetailedTaskKey(dayNumber: number, title: string): string {
+  const slug = slugifyDetailedValue(title).split("_").slice(0, 5).join("_");
+  return slug ? `day_${dayNumber}_${slug}` : `day_${dayNumber}`;
+}
+
+function slugifyDetailedValue(value: string): string {
+  return value
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "_")
+    .replace(/^_+|_+$/g, "");
 }
 
 function generateGoalTasks(
@@ -1123,6 +1293,26 @@ function extractHoursNumber(dailyHours: string | null): number | null {
   if (!dailyHours) return null;
   const match = dailyHours.match(/(\d+)/);
   return match ? Number(match[1]) : null;
+}
+
+function splitTaskDetails(description: string): string[] {
+  return description
+    .split(".")
+    .map((part) => part.trim())
+    .filter((part) => part.length > 4)
+    .slice(0, 4);
+}
+
+function formatTimeRange(startIso: string, endIso: string): string {
+  const start = new Date(startIso);
+  const end = new Date(endIso);
+  return `${start.toLocaleTimeString("en-US", {
+    hour: "numeric",
+    minute: "2-digit",
+  })} - ${end.toLocaleTimeString("en-US", {
+    hour: "numeric",
+    minute: "2-digit",
+  })}`;
 }
 
 function inferGoalLabel(prompt: string) {

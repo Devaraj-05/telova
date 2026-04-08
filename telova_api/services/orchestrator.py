@@ -78,6 +78,7 @@ class TelovaOrchestratorService:
             goal_text=request.goal,
             description=planning_description,
             deadline=request.deadline,
+            detailed_plan_text=request.detailed_plan_text,
             busy_windows=[
                 BusyWindow(start_at=event.start_at, end_at=event.end_at)
                 for event in existing_events
@@ -116,6 +117,7 @@ class TelovaOrchestratorService:
             goal_text=request.goal,
             description=planning_description,
             deadline=request.deadline,
+            detailed_plan_text=request.detailed_plan_text,
             busy_windows=[
                 BusyWindow(start_at=event.start_at, end_at=event.end_at)
                 for event in existing_events

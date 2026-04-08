@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from datetime import UTC, date, datetime, timedelta
 import logging
+import re
 
 from telova_api.config import Settings
 from telova_api.integrations.contracts import IntegrationStatus
@@ -31,7 +32,7 @@ class DatabaseCalendarGateway:
             user_id=goal.user_id,
             goal_id=goal.id,
             task_id=task.id,
-            title=f"[{goal.title}] {task.title}",
+            title=f"{self._compact_goal_label(goal.title)}: {task.title}",
             description=f"Goal: {goal.title}\nTask: {task.title}\n\n{task.description}\n\n— Auto-scheduled by Telova",
             source=EventSource.SYSTEM.value,
             start_at=task.scheduled_start,
@@ -159,6 +160,25 @@ class DatabaseCalendarGateway:
             detail="Using the local database-backed calendar adapter.",
             backend="database",
         )
+
+    def _compact_goal_label(self, goal_title: str) -> str:
+        cleaned = re.sub(
+            r"^\s*i want to\s+",
+            "",
+            goal_title.strip(),
+            flags=re.IGNORECASE,
+        )
+        role_match = re.search(
+            r"get\s+(?:a\s+)?job(?:\s+(?:for|as))?\s+(.+?)(?:\s+role)?$",
+            cleaned,
+            flags=re.IGNORECASE,
+        )
+        if role_match:
+            cleaned = role_match.group(1).strip()
+
+        cleaned = re.sub(r"\brole\b$", "", cleaned, flags=re.IGNORECASE)
+        cleaned = cleaned.strip(" -:")
+        return cleaned or "Telova"
 
     async def _log_sync(
         self,
