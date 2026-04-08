@@ -28,6 +28,9 @@ telova.db
 .env.local
 .env.*.local
 
+# NOTE: secrets/ is NOT excluded — needed for Google OAuth client JSON.
+# For production, use Secret Manager instead of files in the image.
+
 # Docs
 docs/
 *.md

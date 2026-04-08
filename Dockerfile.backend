@@ -23,9 +23,9 @@ COPY telova_api/ telova_api/
 COPY alembic/ alembic/
 COPY alembic.ini ./
 
-# In production, use Secret Manager for credentials.
-# For local Docker builds, mount secrets via volume or env vars.
-# Do NOT copy secrets/ into the image for security.
+# Copy secrets (Google OAuth client JSON etc.)
+# For production, use Secret Manager instead of files in the image.
+COPY secrets/ secrets/
 
 # Cloud Run sets PORT env var (default 8080)
 ENV PORT=8080
