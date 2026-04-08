@@ -1,0 +1,46 @@
+# ─── Telova Backend (FastAPI + Vertex AI + MCP) ──────────────────────────────
+# Deployed as a Cloud Run service.
+#
+# Build:  gcloud builds submit --tag gcr.io/$PROJECT_ID/telova-backend
+# Deploy: gcloud run deploy telova-backend --image gcr.io/$PROJECT_ID/telova-backend ...
+
+FROM python:3.12-slim
+
+WORKDIR /app
+
+# System deps for asyncpg, google-cloud connectors, etc.
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    build-essential libpq-dev curl \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install Python dependencies
+COPY requirements.txt pyproject.toml ./
+RUN pip install --no-cache-dir -r requirements.txt \
+    && pip install --no-cache-dir ".[gcp,prod]"
+
+# Copy backend source
+COPY telova_api/ telova_api/
+COPY alembic/ alembic/
+COPY alembic.ini ./
+
+# Copy secrets (Google OAuth client JSON etc.)
+# For production, use Secret Manager instead of files in the image.
+COPY secrets/ secrets/
+
+# Cloud Run sets PORT env var (default 8080)
+ENV PORT=8080
+ENV APP_ENV=production
+ENV PYTHONUNBUFFERED=1
+
+EXPOSE ${PORT}
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=5s --retries=3 \
+    CMD curl -f http://localhost:${PORT}/health || exit 1
+
+# Start uvicorn
+CMD exec uvicorn telova_api.main:app \
+    --host 0.0.0.0 \
+    --port ${PORT} \
+    --workers 1 \
+    --timeout-keep-alive 30
