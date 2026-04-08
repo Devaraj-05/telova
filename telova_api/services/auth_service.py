@@ -125,7 +125,6 @@ class UserAuthService:
         flow.redirect_uri = callback_uri
         authorization_url, _ = flow.authorization_url(
             access_type="offline",
-            include_granted_scopes="true",
             prompt="consent",
         )
 
