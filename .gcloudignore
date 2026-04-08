@@ -1,0 +1,40 @@
+# Keep Cloud Build source uploads lean, but do not exclude the OAuth client
+# file from the build context. The backend Dockerfile copies `secrets/`.
+
+.git
+.gitignore
+
+# Python
+.venv/
+__pycache__/
+*.pyc
+*.egg-info/
+build/
+dist/
+.pytest_cache/
+
+# Node
+node_modules/
+.next/
+out/
+npm-debug.log*
+
+# Environment
+.env
+.env.local
+.env.*.local
+.env.production
+*.secret
+
+# Local data
+telova.db
+*.db
+uvicorn_log.txt
+tsconfig.tsbuildinfo
+
+# IDE
+.vscode/
+.idea/
+
+# Infra files that are not needed in app images
+infra/gcp/cloudrun.env.yaml

@@ -25,7 +25,6 @@ COPY app/globals.css app/globals.css
 # BACKEND_URL will be set at runtime via env var, but Next.js needs it at
 # build time for the rewrites config. Use a placeholder — the actual value
 # is injected at container start via Cloud Run env vars.
-ENV BACKEND_URL=http://localhost:8080
 ENV NEXT_PUBLIC_API_BASE_URL=
 
 RUN npm run build

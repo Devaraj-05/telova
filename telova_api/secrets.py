@@ -40,24 +40,29 @@ class SecretResolver:
         if inline_value:
             return inline_value.strip()
 
+        missing_file_error: str | None = None
         if file_path:
             path = Path(file_path)
             if path.exists():
                 return path.read_text(encoding="utf-8").strip()
-            if required:
-                raise SecretResolutionError(
-                    f"The configured {label} file was not found: {path}"
-                )
+            missing_file_error = (
+                f"The configured {label} file was not found: {path}"
+            )
 
         if secret_name:
             if not self.settings.use_secret_manager:
-                if required:
+                if required and not missing_file_error:
                     raise SecretResolutionError(
                         f"{label} is configured via Secret Manager, but "
                         "USE_SECRET_MANAGER is disabled."
                     )
-                return None
-            return self._access_secret(secret_name, version=version)
+            else:
+                return self._access_secret(secret_name, version=version)
+
+        if missing_file_error:
+            if required:
+                raise SecretResolutionError(missing_file_error)
+            return None
 
         if required:
             raise SecretResolutionError(

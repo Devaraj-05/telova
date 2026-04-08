@@ -63,7 +63,7 @@ steps:
       - "--memory"
       - "1Gi"
       - "--set-env-vars"
-      - "APP_ENV=production,GOOGLE_CLOUD_PROJECT=$PROJECT_ID,GOOGLE_GENAI_USE_VERTEXAI=true,GOOGLE_CLOUD_LOCATION=${_REGION},ADK_MODEL=gemini-2.5-flash"
+      - "APP_ENV=production,GCP_PROJECT_ID=$PROJECT_ID,GOOGLE_CLOUD_PROJECT=$PROJECT_ID,GOOGLE_GENAI_USE_VERTEXAI=true,GOOGLE_CLOUD_LOCATION=${_REGION},ADK_MODEL=gemini-2.5-flash"
     id: "deploy-backend"
     waitFor: ["push-backend"]
 
