@@ -1,0 +1,45 @@
+# Git
+.git
+.gitignore
+
+# Python
+.venv/
+__pycache__/
+*.pyc
+*.egg-info/
+build/
+dist/
+.pytest_cache/
+
+# Node
+node_modules/
+.next/
+out/
+npm-debug.log*
+
+# IDE
+.vscode/
+.idea/
+
+# Local data
+telova.db
+*.db
+.env
+.env.local
+.env.*.local
+
+# Docs
+docs/
+*.md
+
+# Tests (not needed in prod image)
+tests/
+test_*.py
+
+# Infra scripts (not part of app)
+infra/
+
+# Temp
+*.log
+uvicorn_log.txt
+tsconfig.tsbuildinfo

@@ -1,0 +1,95 @@
+# ─── Cloud Build: Build & Deploy both services ──────────────────────────────
+# Trigger: push to main branch, or manual via:
+#   gcloud builds submit --config cloudbuild.yaml \
+#     --substitutions=_REGION=us-central1
+# ─────────────────────────────────────────────────────────────────────────────
+substitutions:
+  _REGION: us-central1
+
+steps:
+  # ── Step 1: Build backend image ──────────────────────────────────────────
+  - name: "gcr.io/cloud-builders/docker"
+    args:
+      - "build"
+      - "-f"
+      - "Dockerfile.backend"
+      - "-t"
+      - "gcr.io/$PROJECT_ID/telova-backend:$COMMIT_SHA"
+      - "-t"
+      - "gcr.io/$PROJECT_ID/telova-backend:latest"
+      - "."
+    id: "build-backend"
+
+  # ── Step 2: Build frontend image ─────────────────────────────────────────
+  - name: "gcr.io/cloud-builders/docker"
+    args:
+      - "build"
+      - "-f"
+      - "Dockerfile.frontend"
+      - "-t"
+      - "gcr.io/$PROJECT_ID/telova-frontend:$COMMIT_SHA"
+      - "-t"
+      - "gcr.io/$PROJECT_ID/telova-frontend:latest"
+      - "."
+    id: "build-frontend"
+
+  # ── Step 3: Push both images ─────────────────────────────────────────────
+  - name: "gcr.io/cloud-builders/docker"
+    args: ["push", "gcr.io/$PROJECT_ID/telova-backend:$COMMIT_SHA"]
+    id: "push-backend"
+    waitFor: ["build-backend"]
+
+  - name: "gcr.io/cloud-builders/docker"
+    args: ["push", "gcr.io/$PROJECT_ID/telova-frontend:$COMMIT_SHA"]
+    id: "push-frontend"
+    waitFor: ["build-frontend"]
+
+  # ── Step 4: Deploy backend to Cloud Run ──────────────────────────────────
+  - name: "gcr.io/google.com/cloudsdktool/cloud-sdk"
+    entrypoint: gcloud
+    args:
+      - "run"
+      - "deploy"
+      - "telova-backend"
+      - "--image"
+      - "gcr.io/$PROJECT_ID/telova-backend:$COMMIT_SHA"
+      - "--region"
+      - "${_REGION}"
+      - "--platform"
+      - "managed"
+      - "--allow-unauthenticated"
+      - "--port"
+      - "8080"
+      - "--memory"
+      - "1Gi"
+      - "--set-env-vars"
+      - "APP_ENV=production,GOOGLE_CLOUD_PROJECT=$PROJECT_ID,GOOGLE_GENAI_USE_VERTEXAI=true,GOOGLE_CLOUD_LOCATION=${_REGION},ADK_MODEL=gemini-2.5-flash"
+    id: "deploy-backend"
+    waitFor: ["push-backend"]
+
+  # ── Step 5: Deploy frontend to Cloud Run ─────────────────────────────────
+  - name: "gcr.io/google.com/cloudsdktool/cloud-sdk"
+    entrypoint: bash
+    args:
+      - "-c"
+      - |
+        BACKEND_URL=$(gcloud run services describe telova-backend \
+          --region ${_REGION} --format='value(status.url)')
+        gcloud run deploy telova-frontend \
+          --image gcr.io/$PROJECT_ID/telova-frontend:$COMMIT_SHA \
+          --region ${_REGION} \
+          --platform managed \
+          --allow-unauthenticated \
+          --port 3000 \
+          --memory 512Mi \
+          --set-env-vars "BACKEND_URL=$${BACKEND_URL},NODE_ENV=production"
+    id: "deploy-frontend"
+    waitFor: ["push-frontend", "deploy-backend"]
+
+images:
+  - "gcr.io/$PROJECT_ID/telova-backend:$COMMIT_SHA"
+  - "gcr.io/$PROJECT_ID/telova-frontend:$COMMIT_SHA"
+
+timeout: "1200s"
+options:
+  logging: CLOUD_LOGGING_ONLY

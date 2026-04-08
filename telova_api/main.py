@@ -84,6 +84,9 @@ cron_token = secret_resolver.resolve_text(
     secret_name=settings.cron_shared_token_secret,
     label="cron token",
 )
+# In Cloud Run, the frontend runs as a separate service. The static mount
+# below is only used during local development when running `npm run build`
+# with `output: "export"` (the out/ directory).
 FRONTEND_DIST_DIR = Path(__file__).resolve().parent.parent / "out"
 
 

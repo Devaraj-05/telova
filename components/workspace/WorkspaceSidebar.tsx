@@ -7,7 +7,9 @@ import {
   CalendarRange,
   LayoutDashboard,
   LogOut,
+  MessageSquare,
   NotebookTabs,
+  Plus,
   RefreshCcw,
   Settings,
   Sparkles,
@@ -15,7 +17,7 @@ import {
 } from "lucide-react";
 
 import { SIDEBAR_NAV_ITEMS } from "@/lib/workspace/constants";
-import type { SidebarItemId } from "@/lib/workspace/types";
+import type { ChatSession, SidebarItemId } from "@/lib/workspace/types";
 import { cn, initials } from "@/lib/utils";
 
 const ICONS: Record<SidebarItemId, ComponentType<{ className?: string }>> = {
@@ -33,8 +35,12 @@ interface WorkspaceSidebarProps {
   userName?: string;
   userEmail?: string;
   mobile?: boolean;
+  chatSessions?: ChatSession[];
+  activeSessionId?: string | null;
   onLogout?: () => void;
   onClose?: () => void;
+  onSwitchSession?: (sessionId: string) => void;
+  onNewChat?: () => void;
 }
 
 export function WorkspaceSidebar({
@@ -42,8 +48,12 @@ export function WorkspaceSidebar({
   userName = "User",
   userEmail = "user@telova.ai",
   mobile = false,
+  chatSessions = [],
+  activeSessionId,
   onLogout,
   onClose,
+  onSwitchSession,
+  onNewChat,
 }: WorkspaceSidebarProps) {
   return (
     <aside
@@ -102,6 +112,47 @@ export function WorkspaceSidebar({
           );
         })}
       </nav>
+
+      {/* Chat Sessions */}
+      {activeItem === "workspace" && (
+        <div className="mt-6">
+          <div className="flex items-center justify-between px-3 mb-2">
+            <p className="text-xs font-semibold uppercase tracking-wider text-muted">
+              Chats
+            </p>
+            <button
+              type="button"
+              onClick={onNewChat}
+              className="rounded-lg p-1 text-muted transition hover:bg-white/10 hover:text-text"
+              title="New chat"
+            >
+              <Plus className="size-3.5" />
+            </button>
+          </div>
+          <div className="max-h-[200px] overflow-y-auto space-y-0.5">
+            {chatSessions.length === 0 ? (
+              <p className="px-3 text-xs text-muted/60">No chats yet</p>
+            ) : (
+              chatSessions.map((session) => (
+                <button
+                  key={session.id}
+                  type="button"
+                  onClick={() => onSwitchSession?.(session.id)}
+                  className={cn(
+                    "flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-xs transition",
+                    session.id === activeSessionId
+                      ? "bg-brand/15 text-brand"
+                      : "text-muted hover:bg-white/5 hover:text-text",
+                  )}
+                >
+                  <MessageSquare className="size-3.5 shrink-0" />
+                  <span className="truncate">{session.title}</span>
+                </button>
+              ))
+            )}
+          </div>
+        </div>
+      )}
 
       {/* Spacer — pushes profile to bottom */}
       <div className="flex-1" />

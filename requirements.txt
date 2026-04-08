@@ -1,6 +1,7 @@
-# Base runtime and local test dependencies.
-# For Cloud Run, AlloyDB, Secret Manager, Google Workspace, ADK, and Alembic:
+# Base runtime dependencies.
+# For Cloud Run with AlloyDB, Secret Manager, Google Workspace, Vertex AI:
 #   pip install ".[gcp,adk,prod]"
+
 fastapi>=0.135,<0.136
 uvicorn[standard]
 sqlalchemy
@@ -8,11 +9,22 @@ aiosqlite
 pydantic
 mcp
 httpx
-pytest
-pytest-asyncio
 
 # Google Cloud / OAuth / Workspace / Vertex AI
 google-auth
 google-auth-oauthlib
 google-api-python-client
 google-genai
+
+# AlloyDB connector (Cloud Run)
+google-cloud-alloydb-connector[asyncpg]
+asyncpg
+
+# Secret Manager
+google-cloud-secret-manager
+
+# Database migrations
+alembic
+
+# Monitoring (optional)
+sentry-sdk

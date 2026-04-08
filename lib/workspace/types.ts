@@ -45,6 +45,7 @@ export interface AnalysisData {
 }
 
 export type FollowupField =
+  | "background"
   | "deadline"
   | "dailyHours"
   | "includeWeekends"
@@ -177,10 +178,20 @@ export interface QuickActionItem {
     | "cancel_proposal";
 }
 
+export type ChatPhase =
+  | "idle"
+  | "asking_background"
+  | "collecting_preferences"
+  | "generating_plan"
+  | "plan_shown"
+  | "calendar_confirm"
+  | "preview_shown";
+
 export interface GoalDraft {
   userId: string;
   prompt: string;
   description: string;
+  background: string | null;
   deadlineIso: string | null;
   deadlineLabel: string | null;
   priority: string | null;
@@ -337,6 +348,13 @@ export interface SystemStatusRead {
   last_updated: string;
   agents: AgentHealthRead[];
   connections: ToolConnectionRead[];
+}
+
+export interface ChatSession {
+  id: string;
+  title: string;
+  createdAt: string;
+  goalPrompt: string;
 }
 
 export interface GoalCreatePayload {

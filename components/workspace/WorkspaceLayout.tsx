@@ -49,7 +49,11 @@ export function WorkspaceLayout() {
           activeItem="workspace"
           userName={user?.display_name}
           userEmail={user?.email}
+          chatSessions={workspace.chatSessions}
+          activeSessionId={workspace.activeSessionId}
           onLogout={logout}
+          onSwitchSession={workspace.handleSwitchSession}
+          onNewChat={workspace.handleNewChat}
         />
       </div>
 
@@ -67,8 +71,12 @@ export function WorkspaceLayout() {
               userName={user?.display_name}
               userEmail={user?.email}
               mobile
+              chatSessions={workspace.chatSessions}
+              activeSessionId={workspace.activeSessionId}
               onLogout={logout}
               onClose={() => setSidebarOpen(false)}
+              onSwitchSession={workspace.handleSwitchSession}
+              onNewChat={workspace.handleNewChat}
             />
           </div>
         </div>

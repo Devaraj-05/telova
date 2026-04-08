@@ -1,21 +1,35 @@
-
+# Python
 .venv/
 __pycache__/
 *.pyc
-.env
-.env.local
+*.egg-info/
+build/
+dist/
+
+# Node
 node_modules/
 .next/
 out/
 npm-debug.log*
 
-telova.db
-*.db
-secrets/
+# Environment and secrets
 .env
 .env.local
 .env.*.local
 .env.production
-infra/gcp/cloudrun.env.yaml
 secrets/
 *.secret
+infra/gcp/cloudrun.env.yaml
+
+# Database
+telova.db
+*.db
+
+# IDE
+.vscode/
+.idea/
+
+# Misc
+uvicorn_log.txt
+tsconfig.tsbuildinfo
+.pytest_cache/

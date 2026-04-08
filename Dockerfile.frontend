@@ -1,0 +1,47 @@
+# ─── Telova Frontend (Next.js SSR) ───────────────────────────────────────────
+# Deployed as a Cloud Run service. Proxies /api/* to the backend service.
+#
+# Build:  gcloud builds submit --tag gcr.io/$PROJECT_ID/telova-frontend
+# Deploy: gcloud run deploy telova-frontend --image gcr.io/$PROJECT_ID/telova-frontend ...
+
+# ── Stage 1: Build ───────────────────────────────────────────────────────────
+FROM node:20-alpine AS builder
+
+WORKDIR /app
+
+COPY package.json package-lock.json ./
+RUN npm ci
+
+COPY app/ app/
+COPY components/ components/
+COPY hooks/ hooks/
+COPY lib/ lib/
+COPY public/ public/
+COPY next.config.mjs tsconfig.json tailwind.config.ts postcss.config.mjs ./
+COPY next-env.d.ts ./
+COPY app/globals.css app/globals.css
+
+# BACKEND_URL will be set at runtime via env var, but Next.js needs it at
+# build time for the rewrites config. Use a placeholder — the actual value
+# is injected at container start via Cloud Run env vars.
+ENV BACKEND_URL=http://localhost:8080
+ENV NEXT_PUBLIC_API_BASE_URL=
+
+RUN npm run build
+
+# ── Stage 2: Run ─────────────────────────────────────────────────────────────
+FROM node:20-alpine AS runner
+
+WORKDIR /app
+
+ENV NODE_ENV=production
+ENV PORT=3000
+
+# Copy built output
+COPY --from=builder /app/.next/standalone ./
+COPY --from=builder /app/.next/static ./.next/static
+COPY --from=builder /app/public ./public
+
+EXPOSE ${PORT}
+
+CMD ["node", "server.js"]

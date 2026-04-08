@@ -7,6 +7,7 @@ import { DEFAULT_AGENT_FEED, QUICK_ACTIONS, WELCOME_PROMPTS } from "@/lib/worksp
 import {
   advanceProgress,
   applyFollowupAnswer,
+  buildAIPlanPrompt,
   buildAnalysisActivity,
   buildAnalysisData,
   buildDraftFromPrompt,
@@ -36,6 +37,8 @@ import {
 import type { ChatHistoryItem } from "@/lib/workspace/api";
 import type {
   ChatMessage,
+  ChatPhase,
+  ChatSession,
   DashboardRead,
   FollowupQuestion,
   GoalDraft,
@@ -82,7 +85,10 @@ export function useWorkspaceController(userId: string | null) {
   const [systemStatus, setSystemStatus] = useState<SystemStatusRead | null>(null);
   const [agentFeed, setAgentFeed] = useState(DEFAULT_AGENT_FEED);
   const [isBusy, setIsBusy] = useState(false);
+  const [chatPhase, setChatPhase] = useState<ChatPhase>("idle");
   const [chatHistory, setChatHistory] = useState<ChatHistoryItem[]>([]);
+  const [chatSessions, setChatSessions] = useState<ChatSession[]>([]);
+  const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
   const [isHydrated, setIsHydrated] = useState(false);
 
   useEffect(() => {
@@ -116,6 +122,15 @@ export function useWorkspaceController(userId: string | null) {
       if (storedHistory) {
         setChatHistory(JSON.parse(storedHistory));
       }
+
+      const storedSessions = localStorage.getItem("telova_chat_sessions");
+      if (storedSessions) {
+        setChatSessions(JSON.parse(storedSessions));
+      }
+      const storedActiveSession = localStorage.getItem("telova_active_session");
+      if (storedActiveSession) {
+        setActiveSessionId(storedActiveSession);
+      }
     } catch {
       setMessages([createWelcomeMessage()]);
     } finally {
@@ -127,8 +142,12 @@ export function useWorkspaceController(userId: string | null) {
     if (isHydrated) {
       localStorage.setItem("telova_chat_messages", JSON.stringify(messages));
       localStorage.setItem("telova_chat_history", JSON.stringify(chatHistory));
+      localStorage.setItem("telova_chat_sessions", JSON.stringify(chatSessions));
+      if (activeSessionId) {
+        localStorage.setItem("telova_active_session", activeSessionId);
+      }
     }
-  }, [messages, chatHistory, isHydrated]);
+  }, [messages, chatHistory, chatSessions, activeSessionId, isHydrated]);
 
   const activeUserId = draft?.userId ?? userId;
 
@@ -203,12 +222,14 @@ export function useWorkspaceController(userId: string | null) {
     setMessages([createWelcomeMessage()]);
     setComposerValue("");
     setMode("goal");
+    setChatPhase("idle");
     setPendingFollowup(null);
     setDraft(null);
     setPreview(null);
     setCreatedGoal(null);
     setAgentFeed(DEFAULT_AGENT_FEED);
     setChatHistory([]);
+    localStorage.removeItem("telova_chat_messages");
   }, []);
 
   const handleGeneratePreview = useCallback(
@@ -240,16 +261,10 @@ export function useWorkspaceController(userId: string | null) {
 
       pushMessages([
         {
-          id: createMessageId("plan"),
-          type: "plan_preview",
-          createdAt: nowIso(),
-          data: previewToPlanPreview(nextPreview, nextDraft),
-        },
-        {
           id: createMessageId("timeline"),
           type: "timeline_preview",
           createdAt: nowIso(),
-          data: previewToTimeline(nextPreview),
+          data: previewToTimeline(nextPreview, nextDraft),
         },
         {
           id: createMessageId("proposal"),
@@ -263,6 +278,63 @@ export function useWorkspaceController(userId: string | null) {
     [pushMessages],
   );
 
+  // Generate a full AI plan after all preferences are collected
+  const handleGenerateAIPlan = useCallback(
+    async (completedDraft: GoalDraft) => {
+      setIsBusy(true);
+      setChatPhase("generating_plan");
+
+      const planPrompt = buildAIPlanPrompt(completedDraft);
+
+      let aiPlan = "";
+      try {
+        aiPlan = await sendChatMessage(planPrompt, chatHistory);
+        setChatHistory((prev) => [
+          ...prev,
+          { role: "user", content: planPrompt },
+          { role: "assistant", content: aiPlan },
+        ]);
+      } catch {
+        aiPlan = buildDynamicIntro(completedDraft.prompt, completedDraft);
+      }
+
+      pushMessages([
+        {
+          id: createMessageId("agent_reply"),
+          type: "agent_reply",
+          createdAt: nowIso(),
+          text: aiPlan,
+        },
+      ]);
+
+      setIsBusy(false);
+      setChatPhase("plan_shown");
+
+      // Ask if they want to turn it into a calendar schedule
+      const calendarFollowup: FollowupQuestion = {
+        id: createMessageId("followup"),
+        field: "calendarSync",
+        prompt: "Would you like me to turn this into a day-by-day calendar schedule?",
+        helperText:
+          "I'll create a visual timeline with daily tasks and can sync them to your Google Calendar and Tasks.",
+        options: [
+          { label: "Yes, create my schedule", value: "sync calendar" },
+          { label: "No, I'll manage manually", value: "manual only" },
+        ],
+      };
+      setPendingFollowup(calendarFollowup);
+      pushMessages([
+        {
+          id: calendarFollowup.id,
+          type: "followup",
+          createdAt: nowIso(),
+          data: calendarFollowup,
+        },
+      ]);
+    },
+    [chatHistory, pushMessages],
+  );
+
   const handleStartGoalFlow = useCallback(
     async (prompt: string) => {
       const nextDraft = buildDraftFromPrompt(prompt, activeUserId ?? "demo-user");
@@ -270,22 +342,36 @@ export function useWorkspaceController(userId: string | null) {
       setPreview(null);
       setCreatedGoal(null);
       setMode("reply");
-      setAgentFeed(buildAnalysisActivity(nextDraft));
+      setChatPhase("asking_background");
+
+      // Create a new chat session
+      const sessionId = createMessageId("session");
+      const newSession: ChatSession = {
+        id: sessionId,
+        title: prompt.length > 50 ? prompt.slice(0, 50) + "..." : prompt,
+        createdAt: nowIso(),
+        goalPrompt: prompt,
+      };
+      setChatSessions((prev) => [newSession, ...prev]);
+      setActiveSessionId(sessionId);
 
       pushMessages([createUserMessage(prompt)]);
       setIsBusy(true);
 
-      // Get a dynamic, goal-specific response from Vertex AI
-      const agentIntroPrompt = `The user wants to: "${prompt}". In 2-3 concise sentences, acknowledge their goal and briefly explain the day-by-day execution plan you're about to create for them. Be specific to their goal — mention key phases (e.g., for a job goal: learning, projects, interviews). End by saying you'll ask a few quick questions to customise the schedule.`;
+      // Get a dynamic, goal-specific intro from Vertex AI (no analysis/activity cards)
+      const agentIntroPrompt = `The user wants to: "${prompt}". In 2-3 concise sentences, acknowledge their goal and briefly explain that you'll create a personalized day-by-day plan for them. Be specific to their goal. End by saying you need to know a bit about their background first to make the plan right.`;
 
       let agentIntro = "";
       try {
         agentIntro = await sendChatMessage(agentIntroPrompt, []);
+        setChatHistory([
+          { role: "user", content: agentIntroPrompt },
+          { role: "assistant", content: agentIntro },
+        ]);
       } catch {
         agentIntro = buildDynamicIntro(prompt, nextDraft);
       }
 
-      const analysisData = buildAnalysisData(nextDraft);
       pushMessages([
         {
           id: createMessageId("agent_reply"),
@@ -293,22 +379,11 @@ export function useWorkspaceController(userId: string | null) {
           createdAt: nowIso(),
           text: agentIntro,
         },
-        {
-          id: createMessageId("analysis"),
-          type: "analysis",
-          createdAt: nowIso(),
-          data: analysisData,
-        },
-        {
-          id: createMessageId("activity"),
-          type: "activity",
-          createdAt: nowIso(),
-          data: buildAnalysisActivity(nextDraft),
-        },
       ]);
 
       setIsBusy(false);
 
+      // First followup: ask about background
       const followup = nextFollowupQuestion(nextDraft);
       if (followup) {
         setPendingFollowup(followup);
@@ -323,9 +398,9 @@ export function useWorkspaceController(userId: string | null) {
         return;
       }
 
-      await handleGeneratePreview(nextDraft);
+      await handleGenerateAIPlan(nextDraft);
     },
-    [activeUserId, handleGeneratePreview, pushMessages],
+    [activeUserId, handleGenerateAIPlan, pushMessages],
   );
 
   const handleFollowupReply = useCallback(
@@ -338,9 +413,33 @@ export function useWorkspaceController(userId: string | null) {
       const updatedDraft = applyFollowupAnswer(draft, pendingFollowup, answer);
       setDraft(updatedDraft);
 
+      // If this was the calendar sync question (after AI plan), generate timeline preview
+      if (pendingFollowup.field === "calendarSync" && chatPhase === "plan_shown") {
+        setPendingFollowup(null);
+        const syncEnabled = answer.toLowerCase().includes("sync") || answer.toLowerCase().includes("yes");
+        if (syncEnabled) {
+          setChatPhase("calendar_confirm");
+          await handleGeneratePreview(updatedDraft);
+        } else {
+          setChatPhase("idle");
+          pushMessages([
+            {
+              id: createMessageId("agent_reply"),
+              type: "agent_reply",
+              createdAt: nowIso(),
+              text: "No problem! Your plan is ready above. You can always come back and sync it to your calendar later. Just type 'sync calendar' when you're ready.",
+            },
+          ]);
+          setMode("goal");
+        }
+        return;
+      }
+
+      // Check for next preference question (background → deadline → hours → days → priority)
       const nextQuestion = nextFollowupQuestion(updatedDraft);
       if (nextQuestion) {
         setPendingFollowup(nextQuestion);
+        setChatPhase("collecting_preferences");
         pushMessages([
           {
             id: nextQuestion.id,
@@ -352,9 +451,10 @@ export function useWorkspaceController(userId: string | null) {
         return;
       }
 
-      await handleGeneratePreview(updatedDraft);
+      // All preferences collected — generate AI plan (not static preview)
+      await handleGenerateAIPlan(updatedDraft);
     },
-    [draft, handleGeneratePreview, pendingFollowup, pushMessages],
+    [draft, handleGenerateAIPlan, handleGeneratePreview, pendingFollowup, pushMessages, chatPhase],
   );
 
   const handleConfirmPlan = useCallback(async () => {
@@ -637,6 +737,7 @@ export function useWorkspaceController(userId: string | null) {
     draft,
     handleFollowupReply,
     handleGeneratePreview,
+    handleGenerateAIPlan,
     isBusy,
     mode,
     pendingFollowup,
@@ -681,6 +782,40 @@ export function useWorkspaceController(userId: string | null) {
     [router],
   );
 
+  const handleSwitchSession = useCallback(
+    (sessionId: string) => {
+      if (sessionId === activeSessionId) return;
+      // Save current messages under current session
+      if (activeSessionId) {
+        localStorage.setItem(`telova_session_${activeSessionId}`, JSON.stringify(messages));
+      }
+      // Load the target session's messages
+      const stored = localStorage.getItem(`telova_session_${sessionId}`);
+      if (stored) {
+        setMessages(JSON.parse(stored));
+      } else {
+        setMessages([createWelcomeMessage()]);
+      }
+      setActiveSessionId(sessionId);
+      setPendingFollowup(null);
+      setDraft(null);
+      setPreview(null);
+      setCreatedGoal(null);
+      setChatPhase("idle");
+      setMode("goal");
+    },
+    [activeSessionId, messages],
+  );
+
+  const handleNewChat = useCallback(() => {
+    // Save current session messages
+    if (activeSessionId) {
+      localStorage.setItem(`telova_session_${activeSessionId}`, JSON.stringify(messages));
+    }
+    handleResetWorkspace();
+    setActiveSessionId(null);
+  }, [activeSessionId, handleResetWorkspace, messages]);
+
   return {
     messages,
     composerValue,
@@ -694,6 +829,8 @@ export function useWorkspaceController(userId: string | null) {
     currentGoal,
     sessionStatus,
     runtimeStatus,
+    chatSessions,
+    activeSessionId,
     handleComposerSubmit,
     handleFollowupReply,
     handleProposalAction,
@@ -702,6 +839,8 @@ export function useWorkspaceController(userId: string | null) {
     handleSyncAction,
     handleStartGoalFlow,
     handleResetWorkspace,
+    handleSwitchSession,
+    handleNewChat,
   };
 }
 

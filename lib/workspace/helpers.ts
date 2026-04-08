@@ -48,6 +48,7 @@ export function buildDraftFromPrompt(
     userId,
     prompt,
     description: prompt,
+    background: null,
     deadlineIso: parsedDeadline?.iso ?? null,
     deadlineLabel: parsedDeadline?.label ?? null,
     priority: null,
@@ -127,6 +128,22 @@ export function buildAnalysisActivity(draft: GoalDraft): AgentActivityItem[] {
 export function nextFollowupQuestion(
   draft: GoalDraft,
 ): FollowupQuestion | null {
+  if (!draft.background) {
+    return {
+      id: createMessageId("followup"),
+      field: "background",
+      prompt: "Tell me about your background related to this goal.",
+      helperText:
+        "This helps me tailor the plan to your current skill level and experience. The more specific you are, the better the plan.",
+      options: [
+        { label: "Complete beginner", value: "I'm a complete beginner with no prior experience in this area." },
+        { label: "Some basics", value: "I have some basic knowledge but need structured guidance." },
+        { label: "Intermediate", value: "I have intermediate experience and want to level up quickly." },
+        { label: "Switching fields", value: "I'm experienced in a different field and transitioning into this one." },
+      ],
+    };
+  }
+
   if (!draft.deadlineIso) {
     const deadlineOptions = getDeadlineOptions(draft.prompt);
     return {
@@ -186,20 +203,7 @@ export function nextFollowupQuestion(
     };
   }
 
-  if (draft.calendarSync === null) {
-    return {
-      id: createMessageId("followup"),
-      field: "calendarSync",
-      prompt: "Should I add these tasks to your calendar automatically?",
-      helperText:
-        "Each day's work will appear as calendar events so you can see exactly what to do and when.",
-      options: [
-        { label: "Yes, sync to calendar", value: "sync calendar" },
-        { label: "No, I'll manage manually", value: "manual only" },
-      ],
-    };
-  }
-
+  // calendarSync is now asked after AI plan is shown (in useWorkspaceController)
   return null;
 }
 
@@ -209,6 +213,13 @@ export function applyFollowupAnswer(
   answer: string,
 ): GoalDraft {
   const value = answer.trim();
+
+  if (question.field === "background") {
+    return {
+      ...draft,
+      background: value,
+    };
+  }
 
   if (question.field === "deadline") {
     const parsed = extractDeadline(value);
@@ -325,14 +336,36 @@ export function previewToPlanPreview(
 
 export function previewToTimeline(
   preview: GoalPlanPreviewResponse,
+  draft?: GoalDraft | null,
 ): TimelinePreviewData {
   const deadlineDate = new Date(preview.deadline);
   const now = new Date();
   const totalDays = Math.ceil((deadlineDate.getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
   const totalWeeks = Math.max(1, Math.ceil(totalDays / 7));
 
-  // Distribute tasks across weeks and days
-  const tasksPerDay = Math.max(1, Math.ceil(preview.tasks.length / totalDays));
+  // Determine which days of the week are allowed
+  const includeWeekends = draft?.includeWeekends ?? true;
+  const weekendsOnly = draft?.constraints?.some((c) => c.toLowerCase().includes("weekends only")) ?? false;
+  const hoursPerDay = extractHoursNumber(draft?.dailyHours ?? null) ?? 2;
+
+  function isDayAllowed(date: Date): boolean {
+    const dow = date.getDay(); // 0=Sun, 6=Sat
+    if (weekendsOnly) return dow === 0 || dow === 6;
+    if (!includeWeekends) return dow >= 1 && dow <= 5; // Mon-Fri
+    return true;
+  }
+
+  // Build a list of allowed dates from now to deadline
+  const allowedDates: Date[] = [];
+  for (let d = 0; d < totalDays && d < 365; d++) {
+    const date = new Date(now.getTime() + d * 24 * 60 * 60 * 1000);
+    if (isDayAllowed(date)) allowedDates.push(date);
+  }
+
+  // Distribute tasks across allowed dates
+  const tasksPerDay = Math.max(1, Math.ceil(preview.tasks.length / Math.max(1, allowedDates.length)));
+  let taskIdx = 0;
+
   const groups: TimelineGroup[] = [];
 
   for (let weekIdx = 0; weekIdx < totalWeeks; weekIdx++) {
@@ -347,6 +380,13 @@ export function previewToTimeline(
 
     for (let dayOffset = 0; dayOffset < 7; dayOffset++) {
       const dayDate = new Date(weekStart.getTime() + dayOffset * 24 * 60 * 60 * 1000);
+
+      // Skip days that are not allowed (e.g., weekends when user selected Mon-Fri)
+      if (!isDayAllowed(dayDate)) continue;
+
+      // Skip if we've run out of tasks
+      if (taskIdx >= preview.tasks.length) continue;
+
       const dayIso = dayDate.toISOString().slice(0, 10);
       const dayLabel = dayDate.toLocaleDateString("en-US", {
         weekday: "long",
@@ -354,18 +394,16 @@ export function previewToTimeline(
         day: "numeric",
       });
 
-      // Figure out which task(s) belong on this day
-      const globalDayIdx = weekIdx * 7 + dayOffset;
-      const taskStart = globalDayIdx * tasksPerDay;
-      const taskEnd = Math.min(taskStart + tasksPerDay, preview.tasks.length);
-      const dayTasks = preview.tasks.slice(taskStart, taskEnd);
+      const endIdx = Math.min(taskIdx + tasksPerDay, preview.tasks.length);
+      const dayTasks = preview.tasks.slice(taskIdx, endIdx);
+      taskIdx = endIdx;
 
       if (dayTasks.length === 0) continue;
 
       const dayItems = dayTasks.map((task) => ({
         id: task.key,
         title: task.title,
-        durationLabel: `${Math.max(1, Math.round(task.estimated_minutes / 60))} hr`,
+        durationLabel: `${hoursPerDay} hr`,
         taskType: humanizePhase(task.phase),
         responsibleAgent: task.milestone ? "Orchestrator" : phaseToAgent(task.phase),
         statusPreview: task.milestone ? "Milestone — key checkpoint" : "Scheduled",
@@ -1027,6 +1065,24 @@ function buildGoalSummary(draft: GoalDraft, domain: string, taskCount: number): 
     ? "product launch"
     : "goal execution";
   return `${priority} priority ${domainLabel} plan. ${taskCount} daily tasks across the full timeline with ${days} per day.`;
+}
+
+// ─── AI Plan Prompt Builder ──────────────────────────────────────────────────
+
+export function buildAIPlanPrompt(draft: GoalDraft): string {
+  const parts: string[] = [];
+  parts.push(`Goal: "${draft.prompt}"`);
+  if (draft.background) parts.push(`User's background: ${draft.background}`);
+  if (draft.deadlineLabel) parts.push(`Timeline: ${draft.deadlineLabel}`);
+  if (draft.dailyHours) parts.push(`Available time: ${draft.dailyHours}`);
+  if (draft.includeWeekends === false) parts.push("Schedule: Monday to Friday only (no weekends)");
+  else if (draft.includeWeekends === true) {
+    const weekendsOnly = draft.constraints.some((c) => c.toLowerCase().includes("weekends only"));
+    parts.push(weekendsOnly ? "Schedule: Weekends only (Saturday & Sunday)" : "Schedule: All 7 days including weekends");
+  }
+  if (draft.priority) parts.push(`Intensity: ${draft.priority}`);
+
+  return `${parts.join("\n")}\n\nBased on the above, generate a COMPLETE and DETAILED day-by-day execution plan. Include specific daily tasks for each day (${draft.includeWeekends === false ? "Monday through Friday only" : "each scheduled day"}), with ${draft.dailyHours ?? "2 hours/day"} of work per day. Be specific to the goal — mention real tools, resources, and actionable tasks. Organize by weeks and phases. Do NOT be generic.`;
 }
 
 // ─── Utilities ────────────────────────────────────────────────────────────────
