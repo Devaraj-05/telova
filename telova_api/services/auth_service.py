@@ -25,7 +25,7 @@ from telova_api.repositories.google_connections import (
     GoogleWorkspaceConnectionRepository,
 )
 from telova_api.repositories.users import UserRepository
-from telova_api.secrets import SecretResolver
+from telova_api.secrets import SecretResolutionError, SecretResolver
 
 
 IDENTITY_SCOPES = [
@@ -329,13 +329,16 @@ class UserAuthService:
         )
 
     def _resolve_google_oauth_client_config(self) -> dict[str, Any]:
-        payload = self.secret_resolver.resolve_text(
-            inline_value=self.settings.google_oauth_client_json,
-            file_path=self.settings.google_oauth_client_json_file,
-            secret_name=self.settings.google_oauth_client_json_secret,
-            required=True,
-            label="Google OAuth client credentials",
-        )
+        try:
+            payload = self.secret_resolver.resolve_text(
+                inline_value=self.settings.google_oauth_client_json,
+                file_path=self.settings.google_oauth_client_json_file,
+                secret_name=self.settings.google_oauth_client_json_secret,
+                required=True,
+                label="Google OAuth client credentials",
+            )
+        except SecretResolutionError as exc:
+            raise HTTPException(status_code=500, detail=str(exc)) from exc
         try:
             return json.loads(payload)
         except json.JSONDecodeError as exc:
