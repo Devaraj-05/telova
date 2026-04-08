@@ -1,4 +1,4 @@
-import { ArrowRight, CheckCircle2 } from "lucide-react";
+import { ArrowRight, CheckCircle2, CalendarRange } from "lucide-react";
 
 import type { SyncSuccessData } from "@/lib/workspace/types";
 
@@ -46,16 +46,10 @@ export function SyncSuccessCard({ data, onAction }: SyncSuccessCardProps) {
         <button
           type="button"
           onClick={() => onAction("view_timeline")}
-          className="rounded-2xl border border-border bg-white/[0.03] px-4 py-3 text-sm font-semibold text-text transition hover:bg-white/[0.06]"
+          className="inline-flex items-center gap-2 rounded-2xl border border-border bg-white/[0.03] px-4 py-3 text-sm font-semibold text-text transition hover:bg-white/[0.06]"
         >
+          <CalendarRange className="size-4" />
           View Timeline
-        </button>
-        <button
-          type="button"
-          onClick={() => onAction("stay")}
-          className="rounded-2xl border border-border bg-white/[0.03] px-4 py-3 text-sm font-semibold text-text transition hover:bg-white/[0.06]"
-        >
-          Stay in Workspace
         </button>
       </div>
     </section>

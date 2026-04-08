@@ -10,6 +10,7 @@ import {
   ScheduleProgressData,
   ScheduleProgressStep,
   SystemStatusRead,
+  TimelineDayGroup,
   TimelineGroup,
   TimelinePreviewData,
   ToolConnectionStatus,
@@ -69,49 +70,55 @@ export function buildGoalCreatePayload(draft: GoalDraft): GoalCreatePayload {
 }
 
 export function buildAnalysisData(draft: GoalDraft) {
+  const domain = detectGoalDomain(draft.prompt);
+  const domainInsights = getDomainInsights(domain, draft.prompt);
+
   return {
     goalDetected: inferGoalLabel(draft.prompt),
     timelineDetected: draft.deadlineLabel ?? "Needs confirmation",
     constraintsInferred:
       draft.constraints.length > 0
         ? draft.constraints
-        : ["No explicit workload constraints yet"],
+        : domainInsights.constraints,
     syncRequirements: [
       draft.calendarSync === false
         ? "Calendar sync disabled"
-        : "Calendar sync ready",
-      "Task list preparation",
-      "Notes workspace preparation",
+        : "Calendar sync ready — daily tasks will appear on your calendar",
+      "Task list: each day's work will be added as tasks",
+      "Notes workspace: weekly summaries and progress notes",
     ],
-    likelyWorkflow:
-      "planning, scheduling, progress tracking, adaptive replanning",
+    likelyWorkflow: domainInsights.workflow,
   };
 }
 
 export function buildAnalysisActivity(draft: GoalDraft): AgentActivityItem[] {
+  const domain = detectGoalDomain(draft.prompt);
+  const label = inferGoalLabel(draft.prompt);
   return [
     {
       id: createMessageId("activity"),
       agentName: "Orchestrator",
-      currentAction: `Analyzing ${inferGoalLabel(draft.prompt)}`,
+      currentAction: `Analyzing "${label}" and mapping execution path`,
       status: "completed",
     },
     {
       id: createMessageId("activity"),
       agentName: "Scheduler",
-      currentAction: "Checking available planning windows",
+      currentAction: domain === "job_search"
+        ? "Calculating daily study blocks and interview windows"
+        : "Mapping daily work blocks across your schedule",
       status: draft.deadlineIso ? "completed" : "running",
     },
     {
       id: createMessageId("activity"),
       agentName: "Research",
-      currentAction: "Gathering domain-specific milestones",
+      currentAction: getDomainResearchAction(domain),
       status: "running",
     },
     {
       id: createMessageId("activity"),
       agentName: "Memory",
-      currentAction: "Storing user preferences for future replans",
+      currentAction: "Storing preferences for adaptive replanning",
       status: draft.constraints.length ? "completed" : "running",
     },
   ];
@@ -121,18 +128,14 @@ export function nextFollowupQuestion(
   draft: GoalDraft,
 ): FollowupQuestion | null {
   if (!draft.deadlineIso) {
+    const deadlineOptions = getDeadlineOptions(draft.prompt);
     return {
       id: createMessageId("followup"),
       field: "deadline",
-      prompt: "What timeline should I plan for?",
+      prompt: "What's your target timeline for this goal?",
       helperText:
-        "I can draft the plan better once I know the target window.",
-      options: [
-        { label: "30 days", value: "30 days" },
-        { label: "45 days", value: "45 days" },
-        { label: "60 days", value: "60 days" },
-        { label: "90 days", value: "90 days" },
-      ],
+        "I'll build a day-by-day plan that fits within this window. Be realistic — padding helps.",
+      options: deadlineOptions,
     };
   }
 
@@ -140,14 +143,14 @@ export function nextFollowupQuestion(
     return {
       id: createMessageId("followup"),
       field: "dailyHours",
-      prompt: "How many focused hours can you spend per day?",
+      prompt: "How many focused hours can you commit per day?",
       helperText:
-        "I will use this to size the workload and avoid unrealistic scheduling.",
+        "I'll use this to plan each day's workload. I'll schedule specific tasks and learning blocks for each day.",
       options: [
-        { label: "2 hours/day", value: "2 hours/day" },
-        { label: "3 hours/day", value: "3 hours/day" },
-        { label: "4 hours/day", value: "4 hours/day" },
-        { label: "Flexible", value: "Flexible" },
+        { label: "1 hr/day", value: "1 hour/day" },
+        { label: "2 hrs/day", value: "2 hours/day" },
+        { label: "3 hrs/day", value: "3 hours/day" },
+        { label: "4+ hrs/day", value: "4 hours/day" },
       ],
     };
   }
@@ -156,12 +159,14 @@ export function nextFollowupQuestion(
     return {
       id: createMessageId("followup"),
       field: "includeWeekends",
-      prompt: "Should weekends be included?",
+      prompt: "Which days of the week are you available?",
       helperText:
-        "Weekend availability helps the scheduler open extra recovery or deep-work blocks.",
+        "I'll schedule daily tasks only on your available days. Both weekdays and weekends can be used for different types of work.",
       options: [
-        { label: "Weekdays only", value: "weekdays only" },
-        { label: "Include weekends", value: "include weekends" },
+        { label: "Mon – Fri only", value: "weekdays only" },
+        { label: "Mon – Sat (light weekend)", value: "monday to saturday" },
+        { label: "All 7 days (fastest path)", value: "include weekends" },
+        { label: "Weekends only", value: "weekends only" },
       ],
     };
   }
@@ -170,13 +175,13 @@ export function nextFollowupQuestion(
     return {
       id: createMessageId("followup"),
       field: "priority",
-      prompt: "What priority should I assign?",
+      prompt: "What intensity level suits you best?",
       helperText:
-        "Priority helps the agents decide how aggressive the schedule should be.",
+        "This shapes how aggressive the daily schedule is. High priority means more tasks per day.",
       options: [
-        { label: "High", value: "High" },
-        { label: "Balanced", value: "Balanced" },
-        { label: "Flexible", value: "Flexible" },
+        { label: "High — push hard, fast progress", value: "High" },
+        { label: "Balanced — steady and sustainable", value: "Balanced" },
+        { label: "Light — low pressure, long runway", value: "Flexible" },
       ],
     };
   }
@@ -185,12 +190,12 @@ export function nextFollowupQuestion(
     return {
       id: createMessageId("followup"),
       field: "calendarSync",
-      prompt: "Do you want calendar sync enabled?",
+      prompt: "Should I add these tasks to your calendar automatically?",
       helperText:
-        "If enabled, Telova will schedule the approved plan without extra manual steps.",
+        "Each day's work will appear as calendar events so you can see exactly what to do and when.",
       options: [
-        { label: "Sync calendar", value: "sync calendar" },
-        { label: "Keep manual for now", value: "manual only" },
+        { label: "Yes, sync to calendar", value: "sync calendar" },
+        { label: "No, I'll manage manually", value: "manual only" },
       ],
     };
   }
@@ -225,13 +230,20 @@ export function applyFollowupAnswer(
   }
 
   if (question.field === "includeWeekends") {
-    const includeWeekends = value.toLowerCase().includes("include");
+    const lower = value.toLowerCase();
+    const includeWeekends = lower.includes("include") || lower.includes("saturday") || lower.includes("weekend");
+    const weekendsOnly = lower.includes("weekends only");
+    const constraint = weekendsOnly
+      ? "Weekends only — schedule on Saturday and Sunday"
+      : includeWeekends
+      ? "Include weekends when useful"
+      : "Weekdays only — Monday to Friday";
     return withConstraint(
       {
         ...draft,
-        includeWeekends,
+        includeWeekends: includeWeekends || weekendsOnly,
       },
-      includeWeekends ? "Include weekends when useful" : "Weekdays only",
+      constraint,
     );
   }
 
@@ -282,27 +294,27 @@ export function previewToPlanPreview(
     milestones,
     assumptions: [
       draft.dailyHours
-        ? `${draft.dailyHours} available for focused work`
+        ? `${draft.dailyHours} of focused work planned per day`
         : "Daily study hours to be finalized",
       draft.includeWeekends
-        ? "Weekends can absorb overflow or revision"
-        : "Schedule should prioritize weekdays",
+        ? "Weekends included for overflow and review"
+        : "Schedule prioritises weekdays (Mon–Fri)",
       draft.calendarSync === false
         ? "Calendar sync will wait for manual review"
-        : "Calendar sync can happen automatically after approval",
+        : "Each day's tasks will sync to your calendar automatically",
       draft.priority
-        ? `Priority set to ${draft.priority}`
-        : "Priority will stay balanced by default",
+        ? `Priority: ${draft.priority}`
+        : "Priority set to Balanced by default",
     ],
     riskIndicators: [
       draft.includeWeekends
-        ? "Sustained momentum depends on weekend energy"
-        : "Weekday-only scheduling reduces recovery slack",
-      "Missed focus blocks will trigger replanning",
-      "High-complexity tasks should stay near the front of the plan",
+        ? "Weekend sessions require sustained motivation"
+        : "Weekday-only scheduling leaves no buffer for catch-up",
+      "Missed focus blocks trigger automatic replanning",
+      "High-complexity tasks are front-loaded for peak focus",
     ],
     estimatedEffort: {
-      totalSessions: `${preview.tasks.length} structured tasks`,
+      totalSessions: `${preview.tasks.length} daily tasks planned`,
       weeklyLoad: estimateWeeklyLoad(
         preview.tasks.map((task) => task.estimated_minutes),
       ),
@@ -314,36 +326,73 @@ export function previewToPlanPreview(
 export function previewToTimeline(
   preview: GoalPlanPreviewResponse,
 ): TimelinePreviewData {
-  const groups = new Map<string, TimelineGroup>();
+  const deadlineDate = new Date(preview.deadline);
+  const now = new Date();
+  const totalDays = Math.ceil((deadlineDate.getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
+  const totalWeeks = Math.max(1, Math.ceil(totalDays / 7));
 
-  preview.tasks.forEach((task, index) => {
-    const groupLabel = `Week ${Math.max(1, Math.floor(index / 3) + 1)}`;
+  // Distribute tasks across weeks and days
+  const tasksPerDay = Math.max(1, Math.ceil(preview.tasks.length / totalDays));
+  const groups: TimelineGroup[] = [];
 
-    if (!groups.has(groupLabel)) {
-      groups.set(groupLabel, {
-        id: groupLabel.toLowerCase().replace(/\s+/g, "-"),
-        label: groupLabel,
-        items: [],
+  for (let weekIdx = 0; weekIdx < totalWeeks; weekIdx++) {
+    const weekStart = new Date(now.getTime() + weekIdx * 7 * 24 * 60 * 60 * 1000);
+    const weekEnd = new Date(weekStart.getTime() + 6 * 24 * 60 * 60 * 1000);
+
+    const weekLabel = `Week ${weekIdx + 1}`;
+    const dateRange = `${formatShortDate(weekStart.toISOString())} – ${formatShortDate(weekEnd.toISOString())}`;
+
+    const days: TimelineDayGroup[] = [];
+    const flatItems: typeof groups[0]["items"] = [];
+
+    for (let dayOffset = 0; dayOffset < 7; dayOffset++) {
+      const dayDate = new Date(weekStart.getTime() + dayOffset * 24 * 60 * 60 * 1000);
+      const dayIso = dayDate.toISOString().slice(0, 10);
+      const dayLabel = dayDate.toLocaleDateString("en-US", {
+        weekday: "long",
+        month: "short",
+        day: "numeric",
       });
+
+      // Figure out which task(s) belong on this day
+      const globalDayIdx = weekIdx * 7 + dayOffset;
+      const taskStart = globalDayIdx * tasksPerDay;
+      const taskEnd = Math.min(taskStart + tasksPerDay, preview.tasks.length);
+      const dayTasks = preview.tasks.slice(taskStart, taskEnd);
+
+      if (dayTasks.length === 0) continue;
+
+      const dayItems = dayTasks.map((task) => ({
+        id: task.key,
+        title: task.title,
+        durationLabel: `${Math.max(1, Math.round(task.estimated_minutes / 60))} hr`,
+        taskType: humanizePhase(task.phase),
+        responsibleAgent: task.milestone ? "Orchestrator" : phaseToAgent(task.phase),
+        statusPreview: task.milestone ? "Milestone — key checkpoint" : "Scheduled",
+        specificTasks: task.description
+          ? task.description.split(".").filter((s) => s.trim().length > 4).slice(0, 3).map((s) => s.trim())
+          : undefined,
+      }));
+
+      days.push({ date: dayIso, dayLabel, items: dayItems });
+      flatItems.push(...dayItems);
     }
 
-    groups.get(groupLabel)?.items.push({
-      id: task.key,
-      title: task.title,
-      durationLabel: `${Math.max(
-        1,
-        Math.round(task.estimated_minutes / 60),
-      )} hr`,
-      taskType: humanizePhase(task.phase),
-      responsibleAgent: task.milestone
-        ? "Orchestrator"
-        : phaseToAgent(task.phase),
-      statusPreview: task.milestone ? "Milestone" : "Ready to schedule",
-    });
-  });
+    if (days.length > 0 || flatItems.length > 0) {
+      groups.push({
+        id: `week-${weekIdx + 1}`,
+        label: weekLabel,
+        dateRange,
+        days,
+        items: flatItems,
+      });
+    }
+  }
 
   return {
-    groups: Array.from(groups.values()),
+    groups,
+    totalWeeks,
+    goalTitle: preview.summary?.split(".")[0] ?? undefined,
   };
 }
 
@@ -357,38 +406,38 @@ export function createProgressSteps(): ScheduleProgressData {
     },
     {
       id: "task-dag",
-      label: "Creating task DAG",
-      detail: "Locking the approved dependency graph.",
+      label: "Creating daily task plan",
+      detail: "Building a day-by-day task graph for the full timeline.",
       status: "pending",
     },
     {
       id: "schedule",
       label: "Generating schedule",
-      detail: "Placing tasks into viable focus windows.",
+      detail: "Placing each day's tasks into your available focus windows.",
       status: "pending",
     },
     {
       id: "calendar",
       label: "Syncing calendar",
-      detail: "Writing time blocks into the connected calendar.",
+      detail: "Writing daily task blocks into your connected calendar.",
       status: "pending",
     },
     {
       id: "tasks",
       label: "Syncing tasks",
-      detail: "Publishing the work queue to the task manager.",
+      detail: "Publishing the day-by-day work queue to your task manager.",
       status: "pending",
     },
     {
       id: "notes",
       label: "Syncing notes",
-      detail: "Preparing notes, assumptions, and context memory.",
+      detail: "Preparing weekly summaries, assumptions, and context memory.",
       status: "pending",
     },
     {
       id: "dashboard",
-      label: "Finalizing dashboard",
-      detail: "Refreshing metrics, timeline visibility, and alerts.",
+      label: "Finalising dashboard",
+      detail: "Refreshing metrics, timeline visibility, and progress alerts.",
       status: "pending",
     },
   ];
@@ -425,7 +474,7 @@ export function completeProgress(progress: ScheduleProgressData) {
 export function createSyncSuccess(created: GoalPlanResponse) {
   return {
     title: "Goal setup complete",
-    summary: `${created.goal.title} is live. Telova finished planning, scheduling, and sync preparation without extra manual steps.`,
+    summary: `${created.goal.title} is live. Telova has planned each day's work, synced your calendar, and prepared your task list — no manual steps needed.`,
     metrics: [
       { label: "Tasks created", value: String(created.tasks.length) },
       { label: "Calendar slots", value: String(created.calendar_events.length) },
@@ -459,7 +508,7 @@ export function toCurrentGoalSummary(
       goalTitle: created.goal.title,
       stage: "Execution live",
       planStatus: "Confirmed",
-      scheduleStatus: `${created.calendar_events.length} sync events created`,
+      scheduleStatus: `${created.calendar_events.length} daily blocks created`,
       lastUpdated: formatShortDate(created.goal.updated_at),
     };
   }
@@ -512,65 +561,18 @@ export function buildMockPreview(draft: GoalDraft): GoalPlanPreviewResponse {
   const now = new Date();
   const deadline = draft.deadlineIso
     ? new Date(draft.deadlineIso)
-    : new Date(now.getTime() + 45 * 24 * 60 * 60 * 1000);
+    : new Date(now.getTime() + 60 * 24 * 60 * 60 * 1000);
 
-  const tasks = [
-    {
-      key: "foundation_setup",
-      title: "Map the preparation system",
-      description:
-        "Define the execution structure, metrics, and checkpoints.",
-      phase: "foundation",
-      estimated_minutes: 180,
-      depends_on: [],
-      scheduled_start: now.toISOString(),
-      scheduled_end: new Date(
-        now.getTime() + 3 * 60 * 60 * 1000,
-      ).toISOString(),
-      milestone: true,
-      order_index: 0,
-    },
-    {
-      key: "core_practice",
-      title: "Build the core practice loop",
-      description: "Start the daily practice, recap, and review blocks.",
-      phase: "practice",
-      estimated_minutes: 240,
-      depends_on: ["foundation_setup"],
-      scheduled_start: new Date(
-        now.getTime() + 2 * 24 * 60 * 60 * 1000,
-      ).toISOString(),
-      scheduled_end: new Date(
-        now.getTime() + 2 * 24 * 60 * 60 * 1000 + 4 * 60 * 60 * 1000,
-      ).toISOString(),
-      milestone: false,
-      order_index: 1,
-    },
-    {
-      key: "delivery_loop",
-      title: "Run execution rehearsals and reviews",
-      description:
-        "Practice the final simulated runs and close the biggest gaps.",
-      phase: "execution",
-      estimated_minutes: 210,
-      depends_on: ["core_practice"],
-      scheduled_start: new Date(
-        now.getTime() + 7 * 24 * 60 * 60 * 1000,
-      ).toISOString(),
-      scheduled_end: new Date(
-        now.getTime() + 7 * 24 * 60 * 60 * 1000 + 3.5 * 60 * 60 * 1000,
-      ).toISOString(),
-      milestone: true,
-      order_index: 2,
-    },
-  ];
+  const totalDays = Math.ceil((deadline.getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
+  const domain = detectGoalDomain(draft.prompt);
+  const tasks = generateGoalTasks(domain, draft.prompt, totalDays, now, draft);
 
   return {
-    domain: "generic_execution",
+    domain,
     deadline: deadline.toISOString(),
-    summary: `Priority is set to ${draft.priority ?? "Balanced"}. Telova generated a focused progression from setup to execution.`,
+    summary: buildGoalSummary(draft, domain, tasks.length),
     dag: {
-      domain: "generic_execution",
+      domain,
       nodes: tasks.map((task) => ({
         key: task.key,
         title: task.title,
@@ -581,11 +583,10 @@ export function buildMockPreview(draft: GoalDraft): GoalPlanPreviewResponse {
         scheduled_end: task.scheduled_end,
         milestone: task.milestone,
       })),
-      edges: [
-        { from_node: "foundation_setup", to_node: "core_practice" },
-        { from_node: "core_practice", to_node: "delivery_loop" },
-      ],
-      milestones: ["foundation_setup", "delivery_loop"],
+      edges: tasks
+        .filter((_, i) => i > 0)
+        .map((task, i) => ({ from_node: tasks[i].key, to_node: task.key })),
+      milestones: tasks.filter((t) => t.milestone).map((t) => t.key),
     },
     tasks,
   };
@@ -613,6 +614,23 @@ export function buildMockCreateResponse(
     calendar_event_id: createMessageId("event"),
     order_index: index,
   }));
+
+  // Persist timeline tasks to localStorage so the Timeline page can show them
+  if (typeof window !== "undefined") {
+    const calendarTasks = tasks.map((task) => ({
+      id: task.id,
+      title: task.title,
+      durationLabel: `${Math.max(1, Math.round(task.estimated_minutes / 60))} hr`,
+      taskType: humanizePhase(task.phase),
+      date: task.scheduled_start?.slice(0, 10) ?? createdAt.slice(0, 10),
+      status: "pending" as const,
+    }));
+    localStorage.setItem("telova_timeline_tasks", JSON.stringify(calendarTasks));
+    localStorage.setItem(
+      "telova_created_goal",
+      JSON.stringify({ title: draft.prompt, deadline: preview.deadline, tasks: calendarTasks }),
+    );
+  }
 
   return {
     goal: {
@@ -643,6 +661,375 @@ export function buildMockCreateResponse(
     })),
   };
 }
+
+// ─── Domain Detection ─────────────────────────────────────────────────────────
+
+function detectGoalDomain(prompt: string): string {
+  const lower = prompt.toLowerCase();
+  if (
+    lower.includes("full stack") || lower.includes("fullstack") ||
+    lower.includes("frontend") || lower.includes("backend") ||
+    lower.includes("software engineer") || lower.includes("developer job") ||
+    lower.includes("get a job") || lower.includes("job in") ||
+    lower.includes("web developer") || lower.includes("coding job")
+  ) return "job_search_tech";
+  if (
+    lower.includes("devops") || lower.includes("aws") ||
+    lower.includes("kubernetes") || lower.includes("docker") ||
+    lower.includes("certification") || lower.includes("certified")
+  ) return "certification";
+  if (
+    lower.includes("saas") || lower.includes("startup") ||
+    lower.includes("product") || lower.includes("launch") ||
+    lower.includes("mvp") || lower.includes("app")
+  ) return "product_launch";
+  if (
+    lower.includes("fitness") || lower.includes("workout") ||
+    lower.includes("gym") || lower.includes("health") ||
+    lower.includes("weight") || lower.includes("run")
+  ) return "fitness";
+  if (
+    lower.includes("learn") || lower.includes("course") ||
+    lower.includes("study") || lower.includes("skill")
+  ) return "skill_learning";
+  return "generic";
+}
+
+function getDomainInsights(domain: string, prompt: string) {
+  switch (domain) {
+    case "job_search_tech":
+      return {
+        constraints: ["Portfolio projects needed", "Interview prep required", "Resume and LinkedIn optimisation"],
+        workflow: "skill gap analysis → daily coding practice → portfolio builds → mock interviews → job applications",
+      };
+    case "certification":
+      return {
+        constraints: ["Study schedule around existing work", "Practice exam sessions needed"],
+        workflow: "syllabus breakdown → daily study blocks → practice tests → revision → exam",
+      };
+    case "product_launch":
+      return {
+        constraints: ["Development sprints required", "User feedback loops needed"],
+        workflow: "spec & design → build → test → feedback → launch",
+      };
+    case "fitness":
+      return {
+        constraints: ["Rest days required", "Progressive overload needed"],
+        workflow: "assessment → progressive training → nutrition alignment → habit tracking",
+      };
+    default:
+      return {
+        constraints: ["No explicit workload constraints yet"],
+        workflow: "planning → execution → review → refinement",
+      };
+  }
+}
+
+function getDomainResearchAction(domain: string): string {
+  switch (domain) {
+    case "job_search_tech": return "Mapping Full Stack roadmap: HTML → CSS → JS → React → Node → DB → Portfolio";
+    case "certification": return "Gathering certification syllabus and high-yield study topics";
+    case "product_launch": return "Researching MVP scoping and launch checklist";
+    case "fitness": return "Building progressive training periodization plan";
+    default: return "Gathering domain-specific milestones and best practices";
+  }
+}
+
+function getDeadlineOptions(prompt: string) {
+  const lower = prompt.toLowerCase();
+  if (lower.includes("job") || lower.includes("engineer")) {
+    return [
+      { label: "1 month", value: "1 month" },
+      { label: "2 months", value: "2 months" },
+      { label: "3 months", value: "3 months" },
+      { label: "6 months", value: "6 months" },
+    ];
+  }
+  return [
+    { label: "30 days", value: "30 days" },
+    { label: "60 days", value: "60 days" },
+    { label: "90 days", value: "90 days" },
+    { label: "6 months", value: "6 months" },
+  ];
+}
+
+// ─── Goal-Aware Task Generator ─────────────────────────────────────────────────
+
+interface PreviewTask {
+  key: string;
+  title: string;
+  description: string;
+  phase: string;
+  estimated_minutes: number;
+  depends_on: string[];
+  scheduled_start: string;
+  scheduled_end: string;
+  milestone: boolean;
+  order_index: number;
+}
+
+function generateGoalTasks(
+  domain: string,
+  prompt: string,
+  totalDays: number,
+  startDate: Date,
+  draft: GoalDraft,
+): PreviewTask[] {
+  switch (domain) {
+    case "job_search_tech": return generateFullStackJobTasks(totalDays, startDate, draft);
+    case "certification": return generateCertificationTasks(totalDays, startDate, draft, prompt);
+    case "product_launch": return generateProductLaunchTasks(totalDays, startDate, draft);
+    case "fitness": return generateFitnessTasks(totalDays, startDate, draft);
+    case "skill_learning": return generateSkillLearningTasks(totalDays, startDate, draft, prompt);
+    default: return generateGenericTasks(totalDays, startDate, draft);
+  }
+}
+
+function makeTask(
+  index: number,
+  key: string,
+  title: string,
+  description: string,
+  phase: string,
+  minutes: number,
+  startDate: Date,
+  dayOffset: number,
+  milestone = false,
+  dependsOn: string[] = [],
+): PreviewTask {
+  const start = new Date(startDate.getTime() + dayOffset * 24 * 60 * 60 * 1000);
+  const end = new Date(start.getTime() + minutes * 60 * 1000);
+  return {
+    key,
+    title,
+    description,
+    phase,
+    estimated_minutes: minutes,
+    depends_on: dependsOn,
+    scheduled_start: start.toISOString(),
+    scheduled_end: end.toISOString(),
+    milestone,
+    order_index: index,
+  };
+}
+
+function generateFullStackJobTasks(totalDays: number, start: Date, draft: GoalDraft): PreviewTask[] {
+  const hoursPerDay = extractHoursNumber(draft.dailyHours) ?? 3;
+  const minutes = hoursPerDay * 60;
+  const weeks = Math.floor(totalDays / 7);
+  const tasks: PreviewTask[] = [];
+  let day = 0;
+  let idx = 0;
+
+  const addTask = (key: string, title: string, desc: string, phase: string, mins: number, milestone = false, deps: string[] = []) => {
+    tasks.push(makeTask(idx++, key, title, desc, phase, mins, start, day, milestone, deps));
+    day++;
+  };
+
+  // Week 1: HTML & CSS Fundamentals
+  addTask("html_basics", "HTML5 structure and semantics", "Learn document structure, tags, forms, tables. Build a personal HTML page.", "foundation", minutes, false);
+  addTask("css_basics", "CSS layout: Flexbox & Grid", "Master Flexbox and CSS Grid. Recreate 3 real website layouts.", "foundation", minutes, false, ["html_basics"]);
+  addTask("css_responsive", "Responsive design & media queries", "Build a fully responsive landing page from scratch.", "foundation", minutes, false, ["css_basics"]);
+  addTask("html_css_project", "Mini project: Portfolio page HTML/CSS", "Build a simple portfolio page using HTML/CSS. Push to GitHub.", "foundation", minutes, true, ["css_responsive"]);
+
+  if (weeks >= 2 || totalDays >= 14) {
+    // Week 2: JavaScript
+    addTask("js_basics", "JavaScript fundamentals: variables, loops, functions", "Write JS programs covering arrays, objects, closures, and ES6 syntax.", "core_skills", minutes);
+    addTask("js_dom", "DOM manipulation and events", "Build an interactive to-do app using vanilla JS.", "core_skills", minutes, false, ["js_basics"]);
+    addTask("js_async", "Async JS: Promises, fetch, async/await", "Fetch data from a public API. Handle loading and error states.", "core_skills", minutes, false, ["js_dom"]);
+    addTask("js_milestone", "JavaScript mini-project: Weather App", "Build a weather app using OpenWeatherMap API. Milestone checkpoint.", "core_skills", minutes, true, ["js_async"]);
+  }
+
+  if (weeks >= 3 || totalDays >= 21) {
+    // Week 3: React
+    addTask("react_basics", "React: components, props, and state", "Build a counter and a card list using React functional components.", "react", minutes);
+    addTask("react_hooks", "React Hooks: useState, useEffect, useContext", "Refactor the weather app into React. Add global theme context.", "react", minutes, false, ["react_basics"]);
+    addTask("react_router", "React Router and multi-page apps", "Add routing to the weather app. Create Home, Search, Detail pages.", "react", minutes, false, ["react_hooks"]);
+    addTask("react_project", "React milestone: Task Manager App", "Build a full task manager with CRUD using React. Milestone.", "react", minutes, true, ["react_router"]);
+  }
+
+  if (weeks >= 4 || totalDays >= 28) {
+    // Week 4: Node.js & Express
+    addTask("node_basics", "Node.js: modules, file system, HTTP server", "Build a simple HTTP server without Express. Understand the event loop.", "backend", minutes);
+    addTask("express_api", "Express.js REST API", "Build a REST API for the task manager (GET, POST, PUT, DELETE).", "backend", minutes, false, ["node_basics"]);
+    addTask("database_basics", "MongoDB basics and Mongoose", "Connect Express app to MongoDB Atlas. Model users and tasks.", "backend", minutes, false, ["express_api"]);
+    addTask("fullstack_connect", "Connect React frontend to Node backend", "Full-stack integration: React app calls your Express API. Milestone.", "backend", minutes, true, ["database_basics"]);
+  }
+
+  if (weeks >= 5 || totalDays >= 35) {
+    // Week 5: Portfolio + Git + Deployment
+    addTask("git_workflow", "Git branching, PRs, and collaboration workflow", "Practice git flow: feature branches, pull requests, code reviews.", "portfolio", minutes);
+    addTask("portfolio_project", "Build Portfolio project 1: Full-Stack CRUD App", "Deploy a full-stack CRUD app (React + Node + MongoDB) to Vercel/Railway.", "portfolio", minutes, true, ["fullstack_connect"]);
+    addTask("css_advanced", "Advanced CSS: animations, Tailwind CSS", "Style the portfolio app using Tailwind CSS and smooth animations.", "portfolio", minutes, false, ["portfolio_project"]);
+    addTask("testing_basics", "Testing: Jest unit tests + React Testing Library", "Write unit tests for API routes. Write component tests with RTL.", "portfolio", minutes);
+  }
+
+  if (weeks >= 6 || totalDays >= 42) {
+    // Week 6: TypeScript + Advanced React
+    addTask("typescript_basics", "TypeScript fundamentals for React + Node", "Add TypeScript to the portfolio project. Type all components and APIs.", "advanced", minutes);
+    addTask("react_advanced", "Advanced React: memo, useMemo, lazy loading", "Optimise the task manager app. Implement code splitting.", "advanced", minutes, false, ["typescript_basics"]);
+    addTask("portfolio_project2", "Portfolio project 2: Real-time chat or e-commerce", "Build a second portfolio project with WebSockets or Stripe. Milestone.", "advanced", minutes, true);
+    addTask("linkedin_resume", "Update resume, LinkedIn, and GitHub profile", "Craft an ATS-ready resume. Write a compelling LinkedIn summary. Pin GitHub repos.", "job_prep", minutes);
+  }
+
+  if (weeks >= 7 || totalDays >= 49) {
+    // Week 7: Interview Prep
+    addTask("dsa_arrays", "DSA: Arrays, strings, hashmaps — LeetCode Easy", "Solve 10 easy LeetCode problems. Learn Big-O fundamentals.", "interview_prep", minutes);
+    addTask("dsa_trees", "DSA: Trees, recursion, and sorting — LeetCode Medium", "Solve 8 medium LeetCode problems on trees and linked lists.", "interview_prep", minutes);
+    addTask("system_design", "System design basics: REST, databases, caching", "Study scalability, load balancers, caching, SQL vs NoSQL.", "interview_prep", minutes);
+    addTask("mock_interview_1", "Mock interview 1: Coding round simulation", "Complete a timed coding interview simulation. Milestone.", "interview_prep", minutes, true);
+  }
+
+  if (weeks >= 8 || totalDays >= 56) {
+    // Week 8: Job Applications
+    addTask("job_applications", "Apply to 10 target companies per day", "Research companies, tailor resume, submit applications, track in spreadsheet.", "job_search", minutes);
+    addTask("mock_interview_2", "Mock interview 2: Behavioural + technical", "Full mock interview: STAR stories + system design + live coding.", "job_search", minutes, true);
+    addTask("networking", "LinkedIn networking and outreach", "Connect with 20 engineers, message 5 hiring managers, engage in communities.", "job_search", minutes);
+    addTask("offer_negotiation", "Offer evaluation and negotiation preparation", "Research market salaries, prepare negotiation script. Goal complete. 🎯", "job_search", minutes, true);
+  }
+
+  return tasks;
+}
+
+function generateCertificationTasks(totalDays: number, start: Date, draft: GoalDraft, prompt: string): PreviewTask[] {
+  const hoursPerDay = extractHoursNumber(draft.dailyHours) ?? 2;
+  const minutes = hoursPerDay * 60;
+  const tasks: PreviewTask[] = [];
+  let day = 0;
+  let idx = 0;
+
+  const add = (key: string, title: string, desc: string, phase: string, milestone = false, deps: string[] = []) => {
+    tasks.push(makeTask(idx++, key, title, desc, phase, minutes, start, day, milestone, deps));
+    day++;
+  };
+
+  const isAWS = prompt.toLowerCase().includes("aws");
+  const isDevOps = prompt.toLowerCase().includes("devops") || prompt.toLowerCase().includes("kubernetes");
+
+  add("syllabus_review", "Review full exam syllabus and domains", "Break down all exam domains by weight. Create a study tracker.", "foundation", true);
+  add("domain_1", `Study Domain 1: ${isAWS ? "Cloud Concepts & Global Infrastructure" : "Core Concepts"}`, "Read official documentation. Take notes. 2 practice questions.", "study");
+  add("domain_2", `Study Domain 2: ${isAWS ? "IAM, S3, EC2, VPC" : "Architecture Fundamentals"}`, "Hands-on labs on key services. Create flashcards.", "study");
+  add("domain_3", `Study Domain 3: ${isDevOps ? "Kubernetes Workloads & Scheduling" : "High Availability & Scaling"}`, "Build real scenarios in a practice account.", "study");
+  add("domain_4", `Study Domain 4: ${isAWS ? "Databases, Caching, and Messaging" : "Security & Compliance"}`, "Focus on high-yield exam topics. Practice scenario questions.", "study");
+  add("week1_quiz", "Week 1 quiz: 65-question practice test", "Complete a full-length practice exam. Review all wrong answers.", "review", true);
+  add("domain_5", `Study Domain 5: ${isAWS ? "Security, Monitoring, Logging" : "Automation & CI/CD"}`, "Deep dive with hands-on labs.", "study");
+  add("domain_6", `Study Domain 6: ${isAWS ? "Cost Management & Billing" : "Advanced Scenarios"}`, "Review pricing models. Do mock scenarios.", "study");
+  add("weak_areas_review", "Target weak areas identified from practice tests", "Focus 100% on lowest-scoring domains from last quiz.", "review");
+  add("practice_exam_2", "Full practice exam 2: Timed simulation", "Complete second timed exam. Score ≥75% before booking real exam.", "review", true);
+  if (totalDays >= 28) {
+    add("final_review", "Final revision: all domains flashcard sprint", "Speed-review all flashcards. Focus on edge cases.", "final_prep");
+    add("exam_day_prep", "Exam day: logistics, sleep, and mental preparation", "Book the exam, prepare ID, rest well. You've prepared enough.", "final_prep", true);
+  }
+  return tasks;
+}
+
+function generateProductLaunchTasks(totalDays: number, start: Date, draft: GoalDraft): PreviewTask[] {
+  const hoursPerDay = extractHoursNumber(draft.dailyHours) ?? 4;
+  const minutes = hoursPerDay * 60;
+  const tasks: PreviewTask[] = [];
+  let day = 0;
+  let idx = 0;
+  const add = (key: string, title: string, desc: string, phase: string, milestone = false, deps: string[] = []) => {
+    tasks.push(makeTask(idx++, key, title, desc, phase, minutes, start, day, milestone, deps));
+    day++;
+  };
+
+  add("discovery", "Discovery: define problem, users, and value proposition", "Write a one-page problem statement. Identify top 3 user personas.", "discovery", true);
+  add("competitive_analysis", "Competitive analysis and market positioning", "Research 5 competitors. Identify gaps and differentiation angle.", "discovery");
+  add("mvp_spec", "Write MVP feature specification", "Define the minimum feature set. Create user stories and acceptance criteria.", "planning", true);
+  add("tech_stack", "Choose tech stack and set up development environment", "Select framework, database, hosting. Initialise repository.", "planning");
+  add("ui_wireframes", "Create UI wireframes for core flows", "Wireframe key screens: onboarding, dashboard, main feature.", "design");
+  add("backend_setup", "Build backend: auth, database models, API routes", "Implement user auth, core data models, and CRUD API.", "build", true);
+  add("frontend_build", "Build frontend: connect to backend API", "Implement core screens. Connect to backend. Basic styling.", "build");
+  add("core_feature", "Build and test core differentiating feature", "Implement the feature that makes your product valuable. Milestone.", "build", true);
+  if (totalDays >= 21) {
+    add("beta_test", "Internal beta test: fix top 10 bugs", "Use the product daily. Log and fix the most critical issues.", "testing");
+    add("landing_page", "Build landing page and waitlist", "Create a compelling landing page. Set up email waitlist.", "launch_prep", true);
+    add("launch", "Public launch: ProductHunt, communities, outreach", "Submit to ProductHunt. Post in relevant communities. Email waitlist.", "launch", true);
+  }
+  return tasks;
+}
+
+function generateFitnessTasks(totalDays: number, start: Date, draft: GoalDraft): PreviewTask[] {
+  const minutes = 60;
+  const tasks: PreviewTask[] = [];
+  let day = 0;
+  let idx = 0;
+  const add = (key: string, title: string, desc: string, phase: string, milestone = false) => {
+    tasks.push(makeTask(idx++, key, title, desc, phase, minutes, start, day, milestone));
+    day++;
+  };
+  const weeks = Math.floor(totalDays / 7);
+  for (let w = 0; w < weeks; w++) {
+    add(`w${w+1}_d1`, `Week ${w+1}: Upper body strength`, "Push-ups, rows, shoulder press. 3 sets each.", "training");
+    add(`w${w+1}_d2`, `Week ${w+1}: Cardio & core`, "30 min run + plank, crunches, leg raises.", "training");
+    add(`w${w+1}_d3`, `Week ${w+1}: Lower body strength`, "Squats, lunges, deadlifts. 3 sets each.", "training");
+    add(`w${w+1}_rest`, `Week ${w+1}: Active rest + mobility`, "Light walk or yoga. Stretch all major muscle groups.", "recovery");
+    if (w % 2 === 1) {
+      add(`w${w+1}_milestone`, `Fitness check: Week ${w+1} progress assessment`, "Measure weight, reps, and energy levels. Log progress.", "review", true);
+    }
+  }
+  return tasks;
+}
+
+function generateSkillLearningTasks(totalDays: number, start: Date, draft: GoalDraft, prompt: string): PreviewTask[] {
+  const hoursPerDay = extractHoursNumber(draft.dailyHours) ?? 2;
+  const minutes = hoursPerDay * 60;
+  const tasks: PreviewTask[] = [];
+  let day = 0;
+  let idx = 0;
+  const add = (key: string, title: string, desc: string, phase: string, milestone = false) => {
+    tasks.push(makeTask(idx++, key, title, desc, phase, minutes, start, day, milestone));
+    day++;
+  };
+  const weeks = Math.max(2, Math.floor(totalDays / 7));
+  add("foundations", "Map the skill: find best resources and set learning goals", "Curate top 3 resources. Define what 'done' looks like.", "foundation", true);
+  for (let w = 0; w < weeks; w++) {
+    add(`w${w+1}_learn`, `Week ${w+1}: Core study block`, "Read / watch / practice core material for this week.", "learning");
+    add(`w${w+1}_practice`, `Week ${w+1}: Apply the skill with a mini project`, "Build something small using what you learned.", "practice");
+    if (w % 2 === 1) {
+      add(`w${w+1}_review`, `Week ${w+1}: Review and test yourself`, "Quiz yourself on the material. Fix gaps. Milestone.", "review", true);
+    }
+  }
+  add("final_project", "Final project: demonstrate the full skill", "Build a project that shows mastery. Share it publicly.", "delivery", true);
+  return tasks;
+}
+
+function generateGenericTasks(totalDays: number, start: Date, draft: GoalDraft): PreviewTask[] {
+  const hoursPerDay = extractHoursNumber(draft.dailyHours) ?? 2;
+  const minutes = hoursPerDay * 60;
+  const tasks: PreviewTask[] = [];
+  let day = 0;
+  let idx = 0;
+  const add = (key: string, title: string, desc: string, phase: string, milestone = false) => {
+    tasks.push(makeTask(idx++, key, title, desc, phase, minutes, start, day, milestone));
+    day++;
+  };
+  const weeks = Math.max(2, Math.floor(totalDays / 7));
+  add("map_goal", "Map the goal: define the target outcome and success criteria", "Write a clear success statement. Identify the 3 biggest obstacles.", "planning", true);
+  add("break_milestones", "Break the goal into milestones", "Create a milestone for every 2 weeks. Define what each milestone looks like.", "planning");
+  for (let w = 0; w < weeks; w++) {
+    add(`w${w+1}_execute`, `Week ${w+1}: Execute core work`, "Focus on the most important task for this week.", "execution");
+    add(`w${w+1}_review`, `Week ${w+1}: Weekly review and adjustment`, "Review progress. Identify what's working and what to change.", "review", w % 2 === 1);
+  }
+  add("final_review", "Final review: measure outcome vs goal", "Compare result to success criteria. Celebrate wins. Plan next steps.", "delivery", true);
+  return tasks;
+}
+
+function buildGoalSummary(draft: GoalDraft, domain: string, taskCount: number): string {
+  const priority = draft.priority ?? "Balanced";
+  const days = draft.dailyHours ? `${draft.dailyHours} of focused work` : "a structured daily schedule";
+  const domainLabel = domain === "job_search_tech"
+    ? "Full Stack job search"
+    : domain === "certification"
+    ? "certification study"
+    : domain === "product_launch"
+    ? "product launch"
+    : "goal execution";
+  return `${priority} priority ${domainLabel} plan. ${taskCount} daily tasks across the full timeline with ${days} per day.`;
+}
+
+// ─── Utilities ────────────────────────────────────────────────────────────────
 
 function withConstraint(draft: GoalDraft, constraint: string): GoalDraft {
   if (draft.constraints.includes(constraint)) {
@@ -676,6 +1063,12 @@ function extractDeadline(text: string) {
   };
 }
 
+function extractHoursNumber(dailyHours: string | null): number | null {
+  if (!dailyHours) return null;
+  const match = dailyHours.match(/(\d+)/);
+  return match ? Number(match[1]) : null;
+}
+
 function inferGoalLabel(prompt: string) {
   return prompt.replace(/[.?!]+$/, "").trim();
 }
@@ -688,7 +1081,7 @@ function phaseToAgent(phase: string) {
   if (normalized.includes("schedule") || normalized.includes("review")) {
     return "Scheduler";
   }
-  if (normalized.includes("execution") || normalized.includes("practice")) {
+  if (normalized.includes("execution") || normalized.includes("practice") || normalized.includes("build")) {
     return "Execution";
   }
   return "Orchestrator";
@@ -712,7 +1105,7 @@ function unique(items: string[]) {
 
 function estimateWeeklyLoad(minutes: number[]) {
   const totalHours = minutes.reduce((sum, value) => sum + value, 0) / 60;
-  return `${Math.max(4, Math.round(totalHours / 2))} hrs / week`;
+  return `${Math.max(4, Math.round(totalHours / 4))} hrs / week`;
 }
 
 function normalizeToolStatus(status: string): ToolConnectionStatus {

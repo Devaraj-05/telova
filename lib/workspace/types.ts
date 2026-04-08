@@ -84,16 +84,27 @@ export interface TimelineItem {
   taskType: string;
   responsibleAgent: string;
   statusPreview: string;
+  specificTasks?: string[];
+}
+
+export interface TimelineDayGroup {
+  date: string; // ISO date string
+  dayLabel: string; // e.g. "Monday, Apr 8"
+  items: TimelineItem[];
 }
 
 export interface TimelineGroup {
   id: string;
-  label: string;
-  items: TimelineItem[];
+  label: string; // "Week 1"
+  dateRange?: string; // "Apr 8 – Apr 14"
+  days: TimelineDayGroup[];
+  items: TimelineItem[]; // flat list (for backward compat)
 }
 
 export interface TimelinePreviewData {
   groups: TimelineGroup[];
+  totalWeeks?: number;
+  goalTitle?: string;
 }
 
 export type ProposalActionType =

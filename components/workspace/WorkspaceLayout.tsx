@@ -92,6 +92,7 @@ export function WorkspaceLayout() {
                 onSelectPrompt={workspace.handleStartGoalFlow}
                 onFollowupReply={workspace.handleFollowupReply}
                 onProposalAction={workspace.handleProposalAction}
+                onAdjustTimeline={workspace.handleAdjustTimeline}
                 onSyncAction={workspace.handleSyncAction}
               />
             </section>

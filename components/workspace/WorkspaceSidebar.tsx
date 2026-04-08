@@ -52,6 +52,7 @@ export function WorkspaceSidebar({
         mobile && "shadow-panel",
       )}
     >
+      {/* Header / Logo */}
       <div className="flex h-14 items-center justify-between">
         <Link href="/workspace" className="flex items-center gap-3">
           <img
@@ -78,7 +79,8 @@ export function WorkspaceSidebar({
         ) : null}
       </div>
 
-      <nav className="mt-6 space-y-2">
+      {/* Navigation */}
+      <nav className="mt-6 space-y-1">
         {SIDEBAR_NAV_ITEMS.map((item) => {
           const Icon = ICONS[item.id];
           const isActive = item.id === activeItem;
@@ -101,35 +103,33 @@ export function WorkspaceSidebar({
         })}
       </nav>
 
-      <div className="mt-6 rounded-2xl border border-border bg-cardSoft/70 p-4">
+      {/* Spacer — pushes profile to bottom */}
+      <div className="flex-1" />
+
+      {/* User Profile — fixed at bottom */}
+      <div className="rounded-2xl border border-border bg-white/[0.03] p-3">
         <div className="flex items-center gap-3">
-          <div className="flex size-11 items-center justify-center rounded-2xl bg-brand/20 text-sm font-semibold text-brand">
+          <div className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-brand/20 text-xs font-bold text-brand">
             {initials(userName)}
           </div>
-          <div>
-            <p className="text-sm font-semibold text-text">{userName}</p>
-            <p className="text-xs text-muted">{userEmail}</p>
-          </div>
-        </div>
-        <div className="mt-4 flex items-center justify-between rounded-2xl border border-border bg-white/5 px-3 py-2">
-          <div>
-            <p className="text-xs font-semibold uppercase tracking-[0.24em] text-muted">
-              Session
-            </p>
-            <p className="mt-1 text-sm text-text">Workspace ready</p>
+          <div className="min-w-0 flex-1">
+            <p className="truncate text-sm font-semibold text-text">{userName}</p>
+            <p className="truncate text-xs text-muted">{userEmail}</p>
           </div>
           <button
             type="button"
             onClick={onLogout}
-            className="inline-flex items-center gap-2 rounded-xl border border-border px-3 py-2 text-xs font-semibold text-muted transition hover:text-text"
+            title="Logout"
+            className="shrink-0 rounded-lg p-1.5 text-muted transition hover:bg-white/10 hover:text-text"
           >
-            <LogOut className="size-3.5" />
-            Logout
+            <LogOut className="size-4" />
           </button>
         </div>
+        <div className="mt-2 flex items-center gap-1.5 px-0.5">
+          <span className="size-1.5 rounded-full bg-emerald-400" />
+          <p className="text-xs text-muted">Workspace ready</p>
+        </div>
       </div>
-
-
     </aside>
   );
 }

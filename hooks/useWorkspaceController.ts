@@ -64,6 +64,11 @@ function createWelcomeMessage(): ChatMessage {
   };
 }
 
+interface AdjustTimelineConfig {
+  hoursPerDay: number;
+  selectedDays: string[];
+}
+
 export function useWorkspaceController(userId: string | null) {
   const router = useRouter();
   const [messages, setMessages] = useState<ChatMessage[]>([]);
@@ -88,7 +93,7 @@ export function useWorkspaceController(userId: string | null) {
       } else {
         setMessages([createWelcomeMessage()]);
       }
-      
+
       const storedHistory = localStorage.getItem("telova_chat_history");
       if (storedHistory) {
         setChatHistory(JSON.parse(storedHistory));
@@ -249,13 +254,32 @@ export function useWorkspaceController(userId: string | null) {
       setMode("reply");
       setAgentFeed(buildAnalysisActivity(nextDraft));
 
+      pushMessages([createUserMessage(prompt)]);
+      setIsBusy(true);
+
+      // Get a dynamic, goal-specific response from Vertex AI
+      const agentIntroPrompt = `The user wants to: "${prompt}". In 2-3 concise sentences, acknowledge their goal and briefly explain the day-by-day execution plan you're about to create for them. Be specific to their goal — mention key phases (e.g., for a job goal: learning, projects, interviews). End by saying you'll ask a few quick questions to customise the schedule.`;
+
+      let agentIntro = "";
+      try {
+        agentIntro = await sendChatMessage(agentIntroPrompt, []);
+      } catch {
+        agentIntro = buildDynamicIntro(prompt, nextDraft);
+      }
+
+      const analysisData = buildAnalysisData(nextDraft);
       pushMessages([
-        createUserMessage(prompt),
+        {
+          id: createMessageId("agent_reply"),
+          type: "agent_reply",
+          createdAt: nowIso(),
+          text: agentIntro,
+        },
         {
           id: createMessageId("analysis"),
           type: "analysis",
           createdAt: nowIso(),
-          data: buildAnalysisData(nextDraft),
+          data: analysisData,
         },
         {
           id: createMessageId("activity"),
@@ -264,6 +288,8 @@ export function useWorkspaceController(userId: string | null) {
           data: buildAnalysisActivity(nextDraft),
         },
       ]);
+
+      setIsBusy(false);
 
       const followup = nextFollowupQuestion(nextDraft);
       if (followup) {
@@ -342,13 +368,13 @@ export function useWorkspaceController(userId: string | null) {
       {
         id: "scheduler",
         agentName: "Scheduler",
-        currentAction: "Allocating schedule slots",
+        currentAction: "Allocating daily schedule slots",
         status: "running",
       },
       {
         id: "research",
         agentName: "Research",
-        currentAction: "Finalizing the execution breakdown",
+        currentAction: "Finalising the day-by-day execution breakdown",
         status: "completed",
       },
       {
@@ -421,6 +447,29 @@ export function useWorkspaceController(userId: string | null) {
     void refreshWorkspaceContext();
   }, [draft, preview, pushMessages, refreshWorkspaceContext, updateMessage]);
 
+  // Handle "Adjust Timeline" with custom hours + days config from the modal
+  const handleAdjustTimeline = useCallback(
+    async (config: AdjustTimelineConfig) => {
+      if (!draft) return;
+      const daysStr = config.selectedDays.join(", ");
+      const constraint = `Schedule ${config.hoursPerDay}h/day on ${daysStr} only`;
+      const announceText = `Adjust timeline: ${config.hoursPerDay}h per day on ${daysStr}.`;
+      await handleGeneratePreview(
+        {
+          ...draft,
+          dailyHours: `${config.hoursPerDay} hours/day`,
+          includeWeekends: config.selectedDays.some((d) => ["Sat", "Sun"].includes(d)),
+          constraints: [
+            ...draft.constraints.filter((c) => !c.startsWith("Schedule")),
+            constraint,
+          ],
+        },
+        announceText,
+      );
+    },
+    [draft, handleGeneratePreview],
+  );
+
   const handleProposalAction = useCallback(
     async (action: ProposalActionType) => {
       if (!draft) {
@@ -446,6 +495,8 @@ export function useWorkspaceController(userId: string | null) {
       }
 
       if (action === "adjust_timeline") {
+        // Handled directly by ProposalActionsCard modal → handleAdjustTimeline
+        // This fallback runs if onAdjustTimeline wasn't wired (e.g. from TimelinePreviewCard)
         await handleGeneratePreview(
           {
             ...draft,
@@ -460,27 +511,33 @@ export function useWorkspaceController(userId: string | null) {
       }
 
       if (action === "reduce_workload") {
+        pushMessages([createUserMessage("Reduce the workload.")]);
         await handleGeneratePreview(
           {
             ...draft,
+            dailyHours: draft.dailyHours ?? "2 hours/day",
             constraints: [
               ...draft.constraints,
-              "Reduce workload and add more recovery time",
+              "Reduce workload — fewer tasks per day, more recovery time",
             ],
           },
-          "Reduce the workload.",
+          undefined,
         );
         return;
       }
 
       if (action === "add_weekends") {
+        pushMessages([createUserMessage("Add weekends to the schedule.")]);
         await handleGeneratePreview(
           {
             ...draft,
             includeWeekends: true,
-            constraints: [...draft.constraints, "Include weekends for overflow blocks"],
+            constraints: [
+              ...draft.constraints,
+              "Include Saturday and Sunday for study and review sessions",
+            ],
           },
-          "Add weekends to the schedule.",
+          undefined,
         );
         return;
       }
@@ -519,18 +576,16 @@ export function useWorkspaceController(userId: string | null) {
     }
 
     if (mode === "goal") {
-      // Heuristic: If it's a very short greeting, don't trigger the heavy goal planner
       const lower = value.toLowerCase();
       if (lower === "hi" || lower === "hello" || lower === "hey" || lower.length < 4) {
-        // Fall through to the raw chat below
+        // Fall through to raw chat
       } else {
         await handleStartGoalFlow(value);
         return;
       }
     }
 
-    // Fallback: Send raw chat message to Vertex AI if we are just chatting
-    // (though in Telova, most interactions should be structured through the goal flow)
+    // Raw chat via Vertex AI
     pushMessages([createUserMessage(value)]);
     setIsBusy(true);
     setChatHistory((prev) => [...prev, { role: "user", content: value }]);
@@ -552,7 +607,7 @@ export function useWorkspaceController(userId: string | null) {
           id: createMessageId("agent_reply"),
           type: "agent_reply",
           createdAt: nowIso(),
-          text: "Sorry, I couldn't process your request right now. Please try again.",
+          text: "I'm having trouble connecting to the AI right now. Please try again in a moment.",
         },
       ]);
     } finally {
@@ -568,6 +623,7 @@ export function useWorkspaceController(userId: string | null) {
     mode,
     pendingFollowup,
     pushMessages,
+    handleStartGoalFlow,
   ]);
 
   const handleQuickAction = useCallback(
@@ -623,9 +679,26 @@ export function useWorkspaceController(userId: string | null) {
     handleComposerSubmit,
     handleFollowupReply,
     handleProposalAction,
+    handleAdjustTimeline,
     handleQuickAction,
     handleSyncAction,
     handleStartGoalFlow,
     handleResetWorkspace,
   };
+}
+
+// ─── Dynamic Intro Fallback ───────────────────────────────────────────────────
+
+function buildDynamicIntro(prompt: string, draft: GoalDraft): string {
+  const lower = prompt.toLowerCase();
+  if (lower.includes("full stack") || lower.includes("job") || lower.includes("engineer")) {
+    return `Great goal! I'll build you a complete day-by-day Full Stack engineer job prep plan — covering HTML/CSS, JavaScript, React, Node.js, databases, portfolio projects, and interview prep. Each day will have specific tasks so you always know exactly what to work on. Let me ask a few quick questions to customise your schedule.`;
+  }
+  if (lower.includes("devops") || lower.includes("certification") || lower.includes("aws")) {
+    return `Excellent target! I'll create a structured day-by-day certification study plan with domain-by-domain coverage, practice exams, and a final review sprint. Each day will have a focused study block. Let me tailor the schedule to your availability.`;
+  }
+  if (lower.includes("saas") || lower.includes("product") || lower.includes("launch")) {
+    return `Let's build your product! I'll plan each day from discovery through development, testing, and launch — with clear daily tasks and milestones. A few quick questions will help me size the workload correctly.`;
+  }
+  return `I'll create a complete day-by-day plan for "${prompt.trim()}" with specific daily tasks, milestones, and a full timeline. Let me ask a few quick questions to personalise your schedule.`;
 }

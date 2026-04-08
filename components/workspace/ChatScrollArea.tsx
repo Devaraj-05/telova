@@ -20,12 +20,18 @@ import { ProposalActionsCard } from "@/components/workspace/messages/ProposalAct
 import { ScheduleProgressCard } from "@/components/workspace/messages/ScheduleProgressCard";
 import { SyncSuccessCard } from "@/components/workspace/messages/SyncSuccessCard";
 
+interface AdjustTimelineConfig {
+  hoursPerDay: number;
+  selectedDays: string[];
+}
+
 interface ChatScrollAreaProps {
   messages: ChatMessage[];
   welcomePrompts: SuggestionPrompt[];
   onSelectPrompt: (value: string) => void;
   onFollowupReply: (value: string) => void;
   onProposalAction: (action: ProposalActionType) => void;
+  onAdjustTimeline: (config: AdjustTimelineConfig) => void;
   onSyncAction: (action: "open_dashboard" | "view_timeline" | "stay") => void;
 }
 
@@ -35,6 +41,7 @@ export function ChatScrollArea({
   onSelectPrompt,
   onFollowupReply,
   onProposalAction,
+  onAdjustTimeline,
   onSyncAction,
 }: ChatScrollAreaProps) {
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -115,6 +122,7 @@ export function ChatScrollArea({
                 key={message.id}
                 data={message.data}
                 onAction={onProposalAction}
+                onAdjustTimeline={onAdjustTimeline}
               />
             );
           case "schedule_progress":
@@ -137,6 +145,7 @@ export function ChatScrollArea({
       messages,
       onFollowupReply,
       onProposalAction,
+      onAdjustTimeline,
       onSelectPrompt,
       onSyncAction,
       welcomePrompts,
