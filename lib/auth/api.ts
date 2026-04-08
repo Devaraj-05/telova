@@ -7,9 +7,13 @@ import type {
   SignupPayload,
 } from "@/lib/auth/types";
 
+// Use a relative path so all API calls go through the Next.js proxy rewrite
+// (/api/* → http://127.0.0.1:8000/api/*). This avoids CORS issues in any
+// environment (local dev, Cloud Shell, Cloud Run, etc.).
+// If NEXT_PUBLIC_API_BASE_URL is set to a full URL (e.g. for production),
+// it takes precedence.
 const API_BASE_URL =
-  process.env.NEXT_PUBLIC_API_BASE_URL?.replace(/\/$/, "") ??
-  "http://127.0.0.1:8000";
+  process.env.NEXT_PUBLIC_API_BASE_URL?.replace(/\/$/, "") ?? "";
 
 function buildApiUrl(path: string) {
   return `${API_BASE_URL}${path}`;

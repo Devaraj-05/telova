@@ -39,8 +39,8 @@ function WeekGroup({ group, defaultOpen }: { group: TimelineGroup; defaultOpen: 
 
       {open && (
         <div className="border-t border-border px-4 pb-4 pt-3 space-y-4">
-          {group.days.length > 0
-            ? group.days.map((day) => (
+          {(group.days ?? []).length > 0
+            ? (group.days ?? []).map((day) => (
                 <div key={day.date}>
                   <p className="mb-2 text-xs font-semibold uppercase tracking-[0.2em] text-brand">
                     {day.dayLabel}

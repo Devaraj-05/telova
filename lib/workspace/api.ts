@@ -6,9 +6,10 @@ import {
   SystemStatusRead,
 } from "@/lib/workspace/types";
 
+// Empty string = use relative URLs routed through Next.js proxy rewrites
+// (/api/* → http://127.0.0.1:8000/api/*).
 const API_BASE_URL =
-  process.env.NEXT_PUBLIC_API_BASE_URL?.replace(/\/$/, "") ??
-  "http://127.0.0.1:8000";
+  process.env.NEXT_PUBLIC_API_BASE_URL?.replace(/\/$/, "") ?? "";
 
 async function apiRequest<T>(path: string, init?: RequestInit): Promise<T> {
   const response = await fetch(`${API_BASE_URL}${path}`, {

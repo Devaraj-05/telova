@@ -89,7 +89,25 @@ export function useWorkspaceController(userId: string | null) {
     try {
       const storedMessages = localStorage.getItem("telova_chat_messages");
       if (storedMessages) {
-        setMessages(JSON.parse(storedMessages));
+        const parsed = JSON.parse(storedMessages) as ChatMessage[];
+        // Migrate old timeline_preview messages that lack the new `days` field
+        const migrated = parsed.map((msg) => {
+          if (msg.type === "timeline_preview") {
+            return {
+              ...msg,
+              data: {
+                ...msg.data,
+                groups: (msg.data.groups ?? []).map((g: any) => ({
+                  ...g,
+                  days: g.days ?? [],
+                  items: g.items ?? [],
+                })),
+              },
+            } as ChatMessage;
+          }
+          return msg;
+        });
+        setMessages(migrated);
       } else {
         setMessages([createWelcomeMessage()]);
       }
