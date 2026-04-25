@@ -4,6 +4,7 @@ export type SidebarItemId =
   | "workspace"
   | "dashboard"
   | "timeline"
+  | "analytics"
   | "notes"
   | "replans"
   | "agents"
@@ -366,4 +367,59 @@ export interface GoalCreatePayload {
   priority?: string | null;
   constraints?: string[];
   detailed_plan_text?: string | null;
+}
+
+export interface NoteRead {
+  id: string;
+  user_id: string;
+  goal_id: string | null;
+  title: string;
+  content: string;
+  note_type: string;
+  metadata_json: Record<string, unknown>;
+  created_at: string;
+}
+
+export interface AgentRunRead {
+  id: string;
+  user_id: string;
+  goal_id: string | null;
+  agent_name: string;
+  operation: string;
+  status: string;
+  runtime: string;
+  input_payload: Record<string, unknown>;
+  output_payload: Record<string, unknown>;
+  sql_text: string | null;
+  started_at: string;
+  completed_at: string;
+}
+
+export interface McpSyncLogRead {
+  id: string;
+  user_id: string;
+  tool_name: string;
+  operation: string;
+  status: string;
+  resource_type: string;
+  goal_id: string | null;
+  task_id: string | null;
+  note_id: string | null;
+  event_id: string | null;
+  local_id: string | null;
+  external_id: string | null;
+  detail: string;
+  payload_json: Record<string, unknown>;
+  created_at: string;
+}
+
+export interface AnalyticsQueryResponse {
+  question: string;
+  summary: string;
+  generated_sql: string;
+  rows: Record<string, unknown>[];
+  row_count: number;
+  execution_mode: string;
+  source_objects: string[];
+  fallback_reason: string | null;
 }

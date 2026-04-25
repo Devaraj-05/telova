@@ -174,7 +174,7 @@ class ApiAuthMiddleware(BaseHTTPMiddleware):
         detail = "Missing or invalid API credentials."
         if is_cron_path and self.cron_token:
             detail = "Missing or invalid cron credentials."
-        return JSONResponse(status_code=400, content={"detail": detail})
+        return JSONResponse(status_code=401, content={"detail": detail})
 
 
 class RateLimitMiddleware(BaseHTTPMiddleware):

@@ -1,8 +1,12 @@
 import {
+  AgentRunRead,
+  AnalyticsQueryResponse,
   DashboardRead,
   GoalCreatePayload,
   GoalPlanPreviewResponse,
   GoalPlanResponse,
+  McpSyncLogRead,
+  NoteRead,
   SystemStatusRead,
   TaskRead,
 } from "@/lib/workspace/types";
@@ -66,6 +70,35 @@ export function createGoalPlan(payload: GoalCreatePayload) {
 export interface ChatHistoryItem {
   role: "user" | "assistant";
   content: string;
+}
+
+export function fetchNotes(userId: string) {
+  return apiRequest<NoteRead[]>(
+    `/api/v1/notes?user_id=${encodeURIComponent(userId)}`,
+  );
+}
+
+export function fetchAgentRuns(userId: string, limit = 50) {
+  return apiRequest<AgentRunRead[]>(
+    `/api/v1/agent-runs?user_id=${encodeURIComponent(userId)}&limit=${limit}`,
+  );
+}
+
+export function fetchSyncLogs(userId: string, limit = 100) {
+  return apiRequest<McpSyncLogRead[]>(
+    `/api/v1/sync-logs?user_id=${encodeURIComponent(userId)}&limit=${limit}`,
+  );
+}
+
+export function analyticsQuery(
+  userId: string,
+  question: string,
+  limit = 10,
+) {
+  return apiRequest<AnalyticsQueryResponse>("/api/v1/analytics/query", {
+    method: "POST",
+    body: JSON.stringify({ user_id: userId, question, limit }),
+  });
 }
 
 export async function sendChatMessage(

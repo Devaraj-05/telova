@@ -253,6 +253,30 @@ export default function TimelinePage() {
   const prevMonth = () => setViewDate(new Date(year, month - 1, 1));
   const nextMonth = () => setViewDate(new Date(year, month + 1, 1));
 
+  // Week view: compute Mon–Sun of the week containing viewDate
+  const getWeekDays = (anchor: Date): Date[] => {
+    const day = anchor.getDay(); // 0=Sun
+    const monday = new Date(anchor);
+    monday.setDate(anchor.getDate() - ((day + 6) % 7));
+    return Array.from({ length: 7 }, (_, i) => {
+      const d = new Date(monday);
+      d.setDate(monday.getDate() + i);
+      return d;
+    });
+  };
+  const weekDays = getWeekDays(viewDate);
+  const prevWeek = () => {
+    const d = new Date(viewDate);
+    d.setDate(d.getDate() - 7);
+    setViewDate(d);
+  };
+  const nextWeek = () => {
+    const d = new Date(viewDate);
+    d.setDate(d.getDate() + 7);
+    setViewDate(d);
+  };
+  const weekLabel = `${weekDays[0].toLocaleDateString("en-US", { month: "short", day: "numeric" })} – ${weekDays[6].toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}`;
+
   const tasksByDate: Record<string, CalendarTask[]> = {};
   for (const task of tasks) {
     const dateKey = task.date?.slice(0, 10);
@@ -332,87 +356,141 @@ export default function TimelinePage() {
               <div className="mb-4 flex items-center justify-between">
                 <button
                   type="button"
-                  onClick={prevMonth}
+                  onClick={view === "week" ? prevWeek : prevMonth}
                   className="rounded-xl border border-border p-2 text-muted transition hover:text-text"
                 >
                   <ChevronLeft className="size-4" />
                 </button>
                 <h2 className="text-base font-semibold text-text">
-                  {MONTH_NAMES[month]} {year}
+                  {view === "week" ? weekLabel : `${MONTH_NAMES[month]} ${year}`}
                 </h2>
                 <button
                   type="button"
-                  onClick={nextMonth}
+                  onClick={view === "week" ? nextWeek : nextMonth}
                   className="rounded-xl border border-border p-2 text-muted transition hover:text-text"
                 >
                   <ChevronRight className="size-4" />
                 </button>
               </div>
 
-              <div className="mb-2 grid grid-cols-7 gap-1">
-                {DAY_NAMES.map((dayName) => (
-                  <div
-                    key={dayName}
-                    className="py-1 text-center text-xs font-semibold uppercase tracking-wide text-muted"
-                  >
-                    {dayName}
-                  </div>
-                ))}
-              </div>
-
-              <div className="grid grid-cols-7 gap-1">
-                {cells.map((cell, index) => {
-                  if (!cell.day || !cell.dateStr) {
-                    return <div key={index} className="h-20 rounded-xl" />;
-                  }
-
-                  const cellTasks = tasksByDate[cell.dateStr] ?? [];
-                  const isToday = cell.dateStr === todayStr;
-                  const isSelected = cell.dateStr === selectedDate;
-
-                  return (
-                    <button
-                      key={index}
-                      type="button"
-                      onClick={() => setSelectedDate(cell.dateStr)}
-                      className={`relative flex h-20 flex-col rounded-xl border p-2 text-left transition ${
-                        isSelected
-                          ? "border-brand bg-brand/10"
-                          : isToday
-                          ? "border-brand/40 bg-brandSoft/30"
-                          : "border-border bg-white/[0.02] hover:bg-white/[0.05]"
-                      }`}
-                    >
-                      <span
-                        className={`inline-flex size-6 items-center justify-center rounded-full text-xs font-semibold ${
-                          isToday
-                            ? "bg-brand text-white"
-                            : isSelected
-                            ? "text-brand"
-                            : "text-text"
-                        }`}
+              {view === "month" ? (
+                <>
+                  <div className="mb-2 grid grid-cols-7 gap-1">
+                    {DAY_NAMES.map((dayName) => (
+                      <div
+                        key={dayName}
+                        className="py-1 text-center text-xs font-semibold uppercase tracking-wide text-muted"
                       >
-                        {cell.day}
-                      </span>
-                      <div className="mt-1 space-y-0.5 overflow-hidden">
-                        {cellTasks.slice(0, 2).map((task) => (
-                          <div
-                            key={task.id}
-                            className="truncate rounded-md bg-brand/20 px-1 py-0.5 text-[10px] font-medium text-brand"
-                          >
-                            {task.title}
-                          </div>
-                        ))}
-                        {cellTasks.length > 2 && (
-                          <div className="text-[10px] text-muted">
-                            +{cellTasks.length - 2} more
-                          </div>
-                        )}
+                        {dayName}
                       </div>
-                    </button>
-                  );
-                })}
-              </div>
+                    ))}
+                  </div>
+
+                  <div className="grid grid-cols-7 gap-1">
+                    {cells.map((cell, index) => {
+                      if (!cell.day || !cell.dateStr) {
+                        return <div key={index} className="h-20 rounded-xl" />;
+                      }
+                      const cellTasks = tasksByDate[cell.dateStr] ?? [];
+                      const isToday = cell.dateStr === todayStr;
+                      const isSelected = cell.dateStr === selectedDate;
+                      return (
+                        <button
+                          key={index}
+                          type="button"
+                          onClick={() => setSelectedDate(cell.dateStr)}
+                          className={`relative flex h-20 flex-col rounded-xl border p-2 text-left transition ${
+                            isSelected
+                              ? "border-brand bg-brand/10"
+                              : isToday
+                              ? "border-brand/40 bg-brandSoft/30"
+                              : "border-border bg-white/[0.02] hover:bg-white/[0.05]"
+                          }`}
+                        >
+                          <span
+                            className={`inline-flex size-6 items-center justify-center rounded-full text-xs font-semibold ${
+                              isToday ? "bg-brand text-white" : isSelected ? "text-brand" : "text-text"
+                            }`}
+                          >
+                            {cell.day}
+                          </span>
+                          <div className="mt-1 space-y-0.5 overflow-hidden">
+                            {cellTasks.slice(0, 2).map((task) => (
+                              <div
+                                key={task.id}
+                                className="truncate rounded-md bg-brand/20 px-1 py-0.5 text-[10px] font-medium text-brand"
+                              >
+                                {task.title}
+                              </div>
+                            ))}
+                            {cellTasks.length > 2 && (
+                              <div className="text-[10px] text-muted">+{cellTasks.length - 2} more</div>
+                            )}
+                          </div>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </>
+              ) : (
+                // ── Week view ──────────────────────────────────────────
+                <div className="grid grid-cols-7 gap-1">
+                  {weekDays.map((weekDay) => {
+                    const dateStr = toDateStr(weekDay.getFullYear(), weekDay.getMonth(), weekDay.getDate());
+                    const dayTasks = tasksByDate[dateStr] ?? [];
+                    const isToday = dateStr === todayStr;
+                    const isSelected = dateStr === selectedDate;
+                    return (
+                      <div key={dateStr} className="flex flex-col gap-1">
+                        <button
+                          type="button"
+                          onClick={() => setSelectedDate(dateStr)}
+                          className={`flex flex-col items-center rounded-xl border px-1 py-2 text-xs font-semibold transition ${
+                            isSelected
+                              ? "border-brand bg-brand/10 text-brand"
+                              : isToday
+                              ? "border-brand/40 text-brand"
+                              : "border-transparent text-muted hover:border-border hover:text-text"
+                          }`}
+                        >
+                          <span className="uppercase tracking-wide opacity-60">
+                            {DAY_NAMES[weekDay.getDay()]}
+                          </span>
+                          <span
+                            className={`mt-1 inline-flex size-7 items-center justify-center rounded-full text-sm ${
+                              isToday ? "bg-brand text-white" : ""
+                            }`}
+                          >
+                            {weekDay.getDate()}
+                          </span>
+                        </button>
+                        <div className="flex flex-col gap-1 overflow-hidden">
+                          {dayTasks.slice(0, 6).map((task) => (
+                            <button
+                              key={task.id}
+                              type="button"
+                              onClick={() => setSelectedDate(dateStr)}
+                              className={`w-full truncate rounded-lg px-2 py-1 text-left text-[10px] font-medium transition ${
+                                task.status === "done"
+                                  ? "bg-emerald-500/10 text-emerald-400 line-through"
+                                  : "bg-brand/15 text-brand hover:bg-brand/25"
+                              }`}
+                            >
+                              {task.timeLabel && (
+                                <span className="mr-1 opacity-60">{task.timeLabel.split(" - ")[0]}</span>
+                              )}
+                              {task.title}
+                            </button>
+                          ))}
+                          {dayTasks.length > 6 && (
+                            <p className="px-1 text-[10px] text-muted">+{dayTasks.length - 6} more</p>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
 
               {!hasTasks && (
                 <div className="mt-8 rounded-2xl border border-dashed border-border p-8 text-center">

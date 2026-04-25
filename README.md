@@ -43,17 +43,15 @@ The frontend talks to FastAPI through `NEXT_PUBLIC_API_BASE_URL`, which defaults
 
 ## Production frontend serving
 
-The repo is now Next.js-only for frontend. The legacy static UI has been removed.
+`next.config.mjs` uses `output: "standalone"`, which means `npm run build` produces a self-contained Node.js server at `.next/standalone/server.js` — **not** a static `out/` folder.
 
-For production, build the frontend first:
+In production on Cloud Run, the frontend and backend run as **separate services**:
 
-```bash
-npm run build
-```
+- **Frontend service**: runs `node .next/standalone/server.js` (see `Dockerfile.frontend`)
+- **Backend service**: runs `uvicorn telova_api.main:app` (see `Dockerfile.backend`)
+- Set `NEXT_PUBLIC_API_BASE_URL` on the frontend service to the backend Cloud Run URL
 
-That exports the Next.js app into `./out`. FastAPI serves that built frontend directly in production when the `out` directory exists.
-
-If `out` is missing and you open `http://127.0.0.1:8000/`, FastAPI returns a helpful `503` response telling you to run `npm run build`.
+The FastAPI `out/` static mount in `main.py` is retained only as a convenience fallback for local development if you temporarily switch to `output: "export"` and run `npm run build`. It is not used in the standalone/Cloud Run production path.
 
 ## Optional production extras
 

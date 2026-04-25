@@ -1,12 +1,14 @@
 from __future__ import annotations
 
+import asyncio
+import json
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 from pathlib import Path
 
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi import Depends, FastAPI, HTTPException, Query, Request
-from fastapi.responses import JSONResponse, RedirectResponse
+from fastapi.responses import JSONResponse, RedirectResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -129,6 +131,16 @@ app.add_middleware(
 
 async def get_orchestrator(session: AsyncSession = Depends(get_session)):
     return build_orchestrator(session)
+
+
+async def resolve_user_id(
+    user_id: str = Query(default=settings.default_user_id),
+    current_user=Depends(get_optional_current_user),
+) -> str:
+    """Return the authenticated user's ID when a JWT is present; fall back to the
+    ``user_id`` query param (defaults to ``DEFAULT_USER_ID``) for dev/demo flows
+    where auth is disabled."""
+    return current_user.id if current_user is not None else user_id
 
 
 async def get_auth_service(session: AsyncSession = Depends(get_session)):
@@ -282,7 +294,7 @@ async def google_disconnect(
 
 @app.get("/api/v1/dashboard", response_model=DashboardRead)
 async def dashboard(
-    user_id: str = Query(default=settings.default_user_id),
+    user_id: str = Depends(resolve_user_id),
     orchestrator=Depends(get_orchestrator),
 ):
     return await orchestrator.get_dashboard(user_id)
@@ -290,7 +302,7 @@ async def dashboard(
 
 @app.get("/api/v1/goals", response_model=list[GoalRead])
 async def list_goals(
-    user_id: str = Query(default=settings.default_user_id),
+    user_id: str = Depends(resolve_user_id),
     orchestrator=Depends(get_orchestrator),
 ):
     return await orchestrator.list_goals(user_id)
@@ -300,7 +312,10 @@ async def list_goals(
 async def create_goal(
     payload: GoalCreateRequest,
     orchestrator=Depends(get_orchestrator),
+    current_user=Depends(get_optional_current_user),
 ):
+    if current_user is not None:
+        payload = payload.model_copy(update={"user_id": current_user.id})
     goal, dag, tasks, events = await orchestrator.create_goal_plan(payload)
     return GoalPlanResponse(
         goal=GoalRead.model_validate(goal),
@@ -316,7 +331,10 @@ async def create_goal(
 async def preview_goal(
     payload: GoalCreateRequest,
     orchestrator=Depends(get_orchestrator),
+    current_user=Depends(get_optional_current_user),
 ):
+    if current_user is not None:
+        payload = payload.model_copy(update={"user_id": current_user.id})
     preview = await orchestrator.preview_goal_plan(payload)
     return GoalPlanPreviewResponse(
         domain=preview["domain"],
@@ -386,7 +404,7 @@ async def update_task_status(
 @app.get("/api/v1/tasks/search", response_model=list[TaskRead])
 async def search_tasks(
     q: str,
-    user_id: str = Query(default=settings.default_user_id),
+    user_id: str = Depends(resolve_user_id),
     limit: int = Query(default=5, ge=1, le=20),
     orchestrator=Depends(get_orchestrator),
 ):
@@ -395,7 +413,7 @@ async def search_tasks(
 
 @app.get("/api/v1/tasks", response_model=list[TaskRead])
 async def list_tasks(
-    user_id: str = Query(default=settings.default_user_id),
+    user_id: str = Depends(resolve_user_id),
     orchestrator=Depends(get_orchestrator),
 ):
     return await orchestrator.list_tasks(user_id)
@@ -405,9 +423,11 @@ async def list_tasks(
 async def analytics_query(
     payload: AnalyticsQueryRequest,
     orchestrator=Depends(get_orchestrator),
+    current_user=Depends(get_optional_current_user),
 ):
+    effective_user_id = current_user.id if current_user is not None else payload.user_id
     result = await orchestrator.query_productivity_data(
-        user_id=payload.user_id,
+        user_id=effective_user_id,
         question=payload.question,
         limit=payload.limit,
     )
@@ -416,16 +436,71 @@ async def analytics_query(
 
 @app.get("/api/v1/agent-runs", response_model=list[AgentRunRead])
 async def list_agent_runs(
-    user_id: str = Query(default=settings.default_user_id),
+    user_id: str = Depends(resolve_user_id),
     limit: int = Query(default=20, ge=1, le=100),
     orchestrator=Depends(get_orchestrator),
 ):
     return await orchestrator.list_agent_runs(user_id, limit=limit)
 
 
+@app.get("/api/v1/agent-runs/stream", include_in_schema=True)
+async def stream_agent_runs(
+    user_id: str = Depends(resolve_user_id),
+    session: AsyncSession = Depends(get_session),
+):
+    """Server-Sent Events stream that emits new agent-run records as they are
+    created.  Polls every 2 s; heartbeats every 15 s to keep the connection alive
+    through proxies and load-balancers."""
+    from telova_api.repositories.analytics import AgentRunRepository
+
+    repo = AgentRunRepository(session)
+
+    async def event_generator():
+        last_seen_id: str | None = None
+        heartbeat_counter = 0
+
+        # Send initial snapshot (last 5 runs) so the client has something to show.
+        initial = await repo.list_by_user(user_id, limit=5)
+        if initial:
+            last_seen_id = initial[0].id
+            for run in reversed(initial):
+                data = AgentRunRead.model_validate(run).model_dump(mode="json")
+                yield f"event: agent_run\ndata: {json.dumps(data)}\n\n"
+
+        while True:
+            await asyncio.sleep(2)
+            heartbeat_counter += 1
+
+            # Heartbeat every 15 s (7–8 poll cycles at 2 s each).
+            if heartbeat_counter % 8 == 0:
+                yield ": heartbeat\n\n"
+
+            recent = await repo.list_by_user(user_id, limit=20)
+            new_runs = []
+            for run in recent:
+                if run.id == last_seen_id:
+                    break
+                new_runs.append(run)
+
+            if new_runs:
+                last_seen_id = new_runs[0].id
+                for run in reversed(new_runs):
+                    data = AgentRunRead.model_validate(run).model_dump(mode="json")
+                    yield f"event: agent_run\ndata: {json.dumps(data)}\n\n"
+
+    return StreamingResponse(
+        event_generator(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "X-Accel-Buffering": "no",
+        },
+    )
+
+
 @app.get("/api/v1/sync-logs", response_model=list[McpSyncLogRead])
 async def list_sync_logs(
-    user_id: str = Query(default=settings.default_user_id),
+    user_id: str = Depends(resolve_user_id),
     limit: int = Query(default=50, ge=1, le=200),
     orchestrator=Depends(get_orchestrator),
 ):
@@ -434,7 +509,7 @@ async def list_sync_logs(
 
 @app.get("/api/v1/notes", response_model=list[NoteRead])
 async def list_notes(
-    user_id: str = Query(default=settings.default_user_id),
+    user_id: str = Depends(resolve_user_id),
     orchestrator=Depends(get_orchestrator),
 ):
     return await orchestrator.list_notes(user_id)
@@ -444,9 +519,11 @@ async def list_notes(
 async def create_note(
     payload: NoteCreateRequest,
     orchestrator=Depends(get_orchestrator),
+    current_user=Depends(get_optional_current_user),
 ):
+    effective_user_id = current_user.id if current_user is not None else payload.user_id
     return await orchestrator.create_note(
-        user_id=payload.user_id,
+        user_id=effective_user_id,
         title=payload.title,
         content=payload.content,
         goal_id=payload.goal_id,
@@ -472,7 +549,7 @@ async def update_note(
 
 @app.get("/api/v1/calendar/events", response_model=list[CalendarEventRead])
 async def list_calendar_events(
-    user_id: str = Query(default=settings.default_user_id),
+    user_id: str = Depends(resolve_user_id),
     orchestrator=Depends(get_orchestrator),
 ):
     return await orchestrator.list_calendar_events(user_id)
@@ -482,9 +559,11 @@ async def list_calendar_events(
 async def create_calendar_event(
     payload: CalendarEventCreateRequest,
     orchestrator=Depends(get_orchestrator),
+    current_user=Depends(get_optional_current_user),
 ):
+    effective_user_id = current_user.id if current_user is not None else payload.user_id
     return await orchestrator.create_external_calendar_event(
-        user_id=payload.user_id,
+        user_id=effective_user_id,
         title=payload.title,
         description=payload.description,
         start_at=payload.start_at,
@@ -515,7 +594,7 @@ async def weekly_review(
 
 @app.get("/api/v1/system/status", response_model=SystemStatusRead)
 async def system_status(
-    user_id: str = Query(default=settings.default_user_id),
+    user_id: str = Depends(resolve_user_id),
     orchestrator=Depends(get_orchestrator),
 ):
     goals = await orchestrator.list_goals(user_id)
@@ -767,6 +846,24 @@ async def system_status(
             ),
         ],
     )
+
+
+# ── MCP server SSE endpoints ────────────────────────────────────────────────
+# Each FastMCP server is mounted as a sub-application so external MCP clients
+# (Claude Desktop, other agents) can connect over Server-Sent Events.
+import logging as _logging
+_logger = _logging.getLogger(__name__)
+
+try:
+    from telova_api.mcp_servers.tasks_server import mcp as _tasks_mcp
+    from telova_api.mcp_servers.calendar_server import mcp as _calendar_mcp
+    from telova_api.mcp_servers.notes_server import mcp as _notes_mcp
+
+    app.mount("/mcp/tasks", _tasks_mcp.sse_app())
+    app.mount("/mcp/calendar", _calendar_mcp.sse_app())
+    app.mount("/mcp/notes", _notes_mcp.sse_app())
+except Exception as _mcp_err:
+    _logger.warning("MCP server mounts skipped: %s", _mcp_err)
 
 
 if FRONTEND_DIST_DIR.exists():

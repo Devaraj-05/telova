@@ -245,10 +245,23 @@ export function useWorkspaceController(userId: string | null) {
       }
 
       let nextPreview: GoalPlanPreviewResponse;
+      let usedMockPreview = false;
       try {
         nextPreview = await previewGoalPlan(buildGoalCreatePayload(nextDraft));
       } catch {
         nextPreview = buildMockPreview(nextDraft);
+        usedMockPreview = true;
+      }
+
+      if (usedMockPreview) {
+        pushMessages([
+          {
+            id: createMessageId("agent_reply"),
+            type: "agent_reply",
+            createdAt: nowIso(),
+            text: "**Demo Mode** — The planning service is temporarily unavailable. Showing a sample plan to illustrate the flow. Start the backend (`uvicorn telova_api.main:app --reload`) to generate a real personalized plan.",
+          },
+        ]);
       }
 
       setPreview(nextPreview);
@@ -509,9 +522,11 @@ export function useWorkspaceController(userId: string | null) {
       },
     ]);
 
-    const createPromise = createGoalPlan(buildGoalCreatePayload(draft)).catch(() =>
-      Promise.resolve(buildMockCreateResponse(draft, preview ?? buildMockPreview(draft))),
-    );
+    let _usedMockCreate = false;
+    const createPromise = createGoalPlan(buildGoalCreatePayload(draft)).catch(() => {
+      _usedMockCreate = true;
+      return Promise.resolve(buildMockCreateResponse(draft, preview ?? buildMockPreview(draft)));
+    });
 
     const stepOrder = [
       "store-goal",
@@ -559,14 +574,23 @@ export function useWorkspaceController(userId: string | null) {
         status: "completed" as const,
       })),
     );
-    pushMessages([
+    const syncMessages: typeof messages = [
       {
         id: createMessageId("sync"),
         type: "sync_success",
         createdAt: nowIso(),
         data: createSyncSuccess(created),
       },
-    ]);
+    ];
+    if (_usedMockCreate) {
+      syncMessages.push({
+        id: createMessageId("agent_reply"),
+        type: "agent_reply",
+        createdAt: nowIso(),
+        text: "**Demo Mode** — Goal was created using sample data because the backend was unreachable. Start `uvicorn telova_api.main:app --reload` to persist real goals, tasks, and calendar events.",
+      });
+    }
+    pushMessages(syncMessages);
     setIsBusy(false);
     void refreshWorkspaceContext();
   }, [draft, preview, pushMessages, refreshWorkspaceContext, updateMessage]);

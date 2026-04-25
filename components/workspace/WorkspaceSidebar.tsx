@@ -3,6 +3,7 @@
 import Link from "next/link";
 import type { ComponentType } from "react";
 import {
+  BarChart3,
   Bot,
   CalendarRange,
   LayoutDashboard,
@@ -24,6 +25,7 @@ const ICONS: Record<SidebarItemId, ComponentType<{ className?: string }>> = {
   workspace: Sparkles,
   dashboard: LayoutDashboard,
   timeline: CalendarRange,
+  analytics: BarChart3,
   notes: NotebookTabs,
   replans: RefreshCcw,
   agents: Bot,

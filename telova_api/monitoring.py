@@ -23,10 +23,22 @@ def configure_monitoring(settings: Settings) -> None:
         )
         return
 
+    integrations: list = []
+    try:
+        from sentry_sdk.integrations.starlette import StarletteIntegration
+        from sentry_sdk.integrations.fastapi import FastApiIntegration
+        integrations = [StarletteIntegration(transaction_style="url"), FastApiIntegration()]
+    except ImportError:
+        logger.warning(
+            "sentry-sdk FastAPI integration unavailable; falling back to base init. "
+            "Install sentry-sdk[fastapi] for full route instrumentation."
+        )
+
     sentry_sdk.init(
         dsn=settings.sentry_dsn,
         environment=settings.app_env,
         traces_sample_rate=0.1,
         send_default_pii=False,
+        integrations=integrations,
     )
     configure_monitoring._configured = True
