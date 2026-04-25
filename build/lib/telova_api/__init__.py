@@ -1,3 +1,0 @@
-﻿"""Telova application package."""
-
-
