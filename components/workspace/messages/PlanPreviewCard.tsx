@@ -1,4 +1,4 @@
-import { AlertTriangle, Compass, Flag, Gauge, Sparkles } from "lucide-react";
+import { AlertTriangle, Compass, Flag, Gauge, Sparkles, Zap } from "lucide-react";
 import type { ReactNode } from "react";
 
 import type {
@@ -11,7 +11,13 @@ interface PlanPreviewCardProps {
   onAction: (action: ProposalActionType) => void;
 }
 
+const IS_ADK = (runtime?: string) =>
+  runtime?.toLowerCase().includes("adk") ||
+  runtime?.toLowerCase().includes("google adk");
+
 export function PlanPreviewCard({ data, onAction }: PlanPreviewCardProps) {
+  const adkActive = IS_ADK(data.runtime);
+
   return (
     <section className="card-surface max-w-[760px] p-6">
       <div className="flex items-center justify-between gap-3">
@@ -23,7 +29,15 @@ export function PlanPreviewCard({ data, onAction }: PlanPreviewCardProps) {
             Plan preview
           </h3>
         </div>
-        <Sparkles className="size-5 text-brand" />
+        <div className="flex items-center gap-2">
+          {adkActive && (
+            <span className="inline-flex items-center gap-1.5 rounded-full border border-brand/30 bg-brand/10 px-3 py-1 text-xs font-semibold text-brand">
+              <Zap className="size-3" />
+              Powered by Google ADK · Gemini 2.5 Flash
+            </span>
+          )}
+          <Sparkles className="size-5 text-brand" />
+        </div>
       </div>
 
       <div className="mt-6 grid gap-4 md:grid-cols-2">

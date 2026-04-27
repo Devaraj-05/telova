@@ -4,6 +4,14 @@
 #
 # Usage:
 #   export PROJECT_ID=telova-492406
+#
+#   # Recommended — AlloyDB + Google ADK (full production):
+#   export ALLOYDB_DATABASE_URL="postgresql+asyncpg://telova:PASSWORD@/telova?host=/cloudsql/PROJECT:REGION:CLUSTER"
+#   export ALLOYDB_INSTANCE_CONNECTION_NAME="PROJECT:REGION:CLUSTER/INSTANCE"
+#   export AGENT_RUNTIME=google_adk   # enable Google ADK planning
+#   bash deploy.sh
+#
+#   # Minimal — SQLite fallback (demo/prototype only):
 #   bash deploy.sh
 #
 # Prerequisites:
@@ -15,6 +23,22 @@ set -euo pipefail
 PROJECT_ID="${PROJECT_ID:?Set PROJECT_ID before running this script.}"
 REGION="${REGION:-us-central1}"
 SERVICE_ACCOUNT="${CLOUD_RUN_SERVICE_ACCOUNT:-}"
+
+# ── Database URL resolution ──────────────────────────────────────────────────
+# Prefer AlloyDB (PostgreSQL) for production; fall back to SQLite for demos.
+# Set ALLOYDB_DATABASE_URL to activate the full AlloyDB AI NL SQL tier.
+if [[ -n "${ALLOYDB_DATABASE_URL:-}" ]]; then
+  DATABASE_URL="${ALLOYDB_DATABASE_URL}"
+  echo "  ✓ Using AlloyDB: ${DATABASE_URL%%@*}@..."
+else
+  DATABASE_URL="sqlite+aiosqlite:///./telova.db"
+  echo "  ⚠ ALLOYDB_DATABASE_URL not set — deploying with SQLite (demo mode)."
+  echo "    For production: export ALLOYDB_DATABASE_URL=postgresql+asyncpg://..."
+fi
+
+# ── Agent runtime ────────────────────────────────────────────────────────────
+# Set AGENT_RUNTIME=google_adk to enable Google ADK + Gemini 2.5 Flash planning.
+AGENT_RUNTIME="${AGENT_RUNTIME:-deterministic}"
 
 echo "═══════════════════════════════════════════════════════════════"
 echo "  Telova Cloud Run Deployment"
@@ -59,13 +83,18 @@ BACKEND_DEPLOY_ARGS=(
   --set-env-vars "GOOGLE_GENAI_USE_VERTEXAI=true"
   --set-env-vars "GOOGLE_CLOUD_LOCATION=${REGION}"
   --set-env-vars "ADK_MODEL=gemini-2.5-flash"
-  --set-env-vars "AGENT_RUNTIME=deterministic"
+  --set-env-vars "AGENT_RUNTIME=${AGENT_RUNTIME}"
   --set-env-vars "INTEGRATION_BACKEND=google"
   --set-env-vars "API_AUTH_MODE=disabled"
   --set-env-vars "RATE_LIMIT_ENABLED=true"
   --set-env-vars "JSON_LOGS=true"
-  --set-env-vars "DATABASE_URL=sqlite+aiosqlite:///./telova.db"
+  --set-env-vars "DATABASE_URL=${DATABASE_URL}"
 )
+
+# Attach Cloud SQL (AlloyDB) socket when using PostgreSQL
+if [[ -n "${ALLOYDB_INSTANCE_CONNECTION_NAME:-}" ]]; then
+  BACKEND_DEPLOY_ARGS+=(--add-cloudsql-instances "${ALLOYDB_INSTANCE_CONNECTION_NAME}")
+fi
 
 if [[ -n "${SERVICE_ACCOUNT}" ]]; then
   BACKEND_DEPLOY_ARGS+=(--service-account "${SERVICE_ACCOUNT}")
@@ -136,11 +165,18 @@ echo "  Next steps:"
 echo "    1. Update Google OAuth redirect URI in Cloud Console:"
 echo "       ${BACKEND_URL}/api/v1/auth/google/callback"
 echo ""
-echo "    2. Switch to AlloyDB (replace SQLite for production):"
-echo "       gcloud run services update telova-backend --region ${REGION} \\"
-echo "         --update-env-vars DATABASE_URL=postgresql+asyncpg://user:pass@host/telova"
+if [[ "${DATABASE_URL}" == sqlite* ]]; then
+echo "    2. Switch to AlloyDB for production (currently running SQLite):"
+echo "       export ALLOYDB_DATABASE_URL='postgresql+asyncpg://telova:PASS@/telova?host=/cloudsql/PROJECT:REGION:CLUSTER'"
+echo "       export ALLOYDB_INSTANCE_CONNECTION_NAME='PROJECT:REGION:CLUSTER/INSTANCE'"
+echo "       bash deploy.sh"
 echo ""
-echo "    3. Configure Secret Manager for production secrets:"
+fi
+echo "    3. Enable Google ADK + Gemini 2.5 Flash planning:"
+echo "       export AGENT_RUNTIME=google_adk && bash deploy.sh"
+echo "       (Activates 'Powered by Google ADK' badge on plan preview)"
+echo ""
+echo "    4. Configure Secret Manager for production secrets:"
 echo "       gcloud run services update telova-backend --region ${REGION} \\"
 echo "         --update-env-vars USE_SECRET_MANAGER=true"
 echo "═══════════════════════════════════════════════════════════════"

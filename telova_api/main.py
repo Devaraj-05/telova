@@ -336,6 +336,7 @@ async def preview_goal(
     if current_user is not None:
         payload = payload.model_copy(update={"user_id": current_user.id})
     preview = await orchestrator.preview_goal_plan(payload)
+    runtime_status = orchestrator.describe_planning_runtime()
     return GoalPlanPreviewResponse(
         domain=preview["domain"],
         deadline=preview["deadline"],
@@ -345,6 +346,7 @@ async def preview_goal(
             GoalPreviewTaskRead.model_validate(task)
             for task in preview["tasks"]
         ],
+        planning_runtime=runtime_status.get("name", "Deterministic Planner"),
     )
 
 

@@ -77,6 +77,7 @@ export interface PlanPreviewData {
     weeklyLoad: string;
     horizon: string;
   };
+  runtime?: string;
 }
 
 export interface TimelineItem {
@@ -263,6 +264,7 @@ export interface GoalPlanPreviewResponse {
   summary: string;
   dag: GoalDagResponse;
   tasks: GoalPreviewTaskRead[];
+  planning_runtime?: string;
 }
 
 export interface GoalRead {

@@ -162,6 +162,7 @@ class GoalPlanPreviewResponse(BaseModel):
     summary: str
     dag: GoalDagResponse
     tasks: list[GoalPreviewTaskRead]
+    planning_runtime: str = "Deterministic Planner"
 
 
 class GoalRead(BaseModel):

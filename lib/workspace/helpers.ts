@@ -333,6 +333,7 @@ export function previewToPlanPreview(
       ),
       horizon: formatDayLabel(preview.deadline),
     },
+    runtime: preview.planning_runtime,
   };
 }
 
