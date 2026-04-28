@@ -18,7 +18,7 @@ sync_url = (
     settings.database_url.replace("+aiosqlite", "")
     .replace("+asyncpg", "")
 )
-config.set_main_option("sqlalchemy.url", sync_url)
+config.set_main_option("sqlalchemy.url", sync_url.replace("%", "%%"))
 
 if config.config_file_name is not None:
     fileConfig(config.config_file_name)
