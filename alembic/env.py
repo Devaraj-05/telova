@@ -4,8 +4,8 @@ import asyncio
 from logging.config import fileConfig
 
 from alembic import context
-from sqlalchemy import engine_from_config, pool
-from sqlalchemy.ext.asyncio import async_engine_from_config, create_async_engine
+from sqlalchemy import create_engine, engine_from_config, pool
+from sqlalchemy.ext.asyncio import create_async_engine
 
 from telova_api.config import get_settings
 from telova_api.db import Base
@@ -41,24 +41,23 @@ def run_migrations_offline() -> None:
 
 
 def run_migrations_online() -> None:
-    if "+asyncpg" in settings.database_url or "+aiosqlite" in settings.database_url:
+    db_url = settings.database_url
+
+    if "+aiosqlite" in db_url:
         asyncio.run(run_async_migrations())
         return
 
-    connectable = engine_from_config(
-        config.get_section(config.config_ini_section, {}),
-        prefix="sqlalchemy.",
-        poolclass=pool.NullPool,
-        future=True,
-    )
-
+    # For PostgreSQL (including +asyncpg URLs): use sync psycopg2.
+    # asyncpg's SSL negotiation with the AlloyDB Auth Proxy is unreliable;
+    # psycopg2 + sslmode=disable bypasses the issue entirely.
+    pg_url = db_url.replace("+asyncpg", "")
+    connectable = create_engine(pg_url, poolclass=pool.NullPool)
     with connectable.connect() as connection:
         context.configure(
             connection=connection,
             target_metadata=target_metadata,
             compare_type=True,
         )
-
         with context.begin_transaction():
             context.run_migrations()
 
@@ -75,16 +74,9 @@ def do_run_migrations(connection) -> None:
 
 
 async def run_async_migrations() -> None:
-    db_url = settings.database_url
-    # Auth Proxy exposes a plain TCP socket locally; asyncpg must not attempt SSL.
-    connect_args: dict = {}
-    if "127.0.0.1" in db_url or "localhost" in db_url:
-        connect_args["ssl"] = False
-
     connectable = create_async_engine(
-        db_url,
+        settings.database_url,
         poolclass=pool.NullPool,
-        connect_args=connect_args,
     )
 
     async with connectable.connect() as connection:
