@@ -1,5 +1,6 @@
 ﻿from __future__ import annotations
 
+import re
 from contextlib import asynccontextmanager
 from typing import AsyncIterator
 
@@ -79,10 +80,18 @@ def _build_engine() -> AsyncEngine:
             pool_pre_ping=True,
         )
 
+    # asyncpg uses ssl= connect_arg; strip psycopg2-style ?sslmode=disable
+    db_url = settings.database_url
+    connect_args: dict = {}
+    if "sslmode=disable" in db_url:
+        db_url = re.sub(r"[?&]sslmode=disable", "", db_url).rstrip("?")
+        connect_args["ssl"] = False
+
     return create_async_engine(
-        settings.database_url,
+        db_url,
         future=True,
         echo=False,
+        connect_args=connect_args,
     )
 
 
