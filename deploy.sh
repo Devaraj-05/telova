@@ -99,7 +99,7 @@ BACKEND_DEPLOY_ARGS=(
   --set-env-vars "API_AUTH_MODE=disabled"
   --set-env-vars "RATE_LIMIT_ENABLED=true"
   --set-env-vars "JSON_LOGS=true"
-  --set-env-vars "^@^DATABASE_URL=${DATABASE_URL}"
+  --set-env-vars "DATABASE_URL=${DATABASE_URL}"
 )
 
 # Direct VPC egress so Cloud Run can reach AlloyDB's private IP.
