@@ -164,7 +164,7 @@ echo ""
 echo "▸ [3/3] Updating backend CORS to allow frontend origin..."
 gcloud run services update telova-backend \
   --region "${REGION}" \
-  --update-env-vars "CORS_ALLOW_ORIGINS=${FRONTEND_URL},http://localhost:3000" \
+  --update-env-vars "^@^CORS_ALLOW_ORIGINS=${FRONTEND_URL},http://localhost:3000" \
   --update-env-vars "FRONTEND_APP_URL=${FRONTEND_URL}"
 
 # ── Done ─────────────────────────────────────────────────────────────────────
