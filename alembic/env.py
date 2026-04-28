@@ -5,7 +5,7 @@ from logging.config import fileConfig
 
 from alembic import context
 from sqlalchemy import engine_from_config, pool
-from sqlalchemy.ext.asyncio import async_engine_from_config
+from sqlalchemy.ext.asyncio import async_engine_from_config, create_async_engine
 
 from telova_api.config import get_settings
 from telova_api.db import Base
@@ -75,13 +75,16 @@ def do_run_migrations(connection) -> None:
 
 
 async def run_async_migrations() -> None:
-    configuration = config.get_section(config.config_ini_section, {})
-    configuration["sqlalchemy.url"] = settings.database_url
-    connectable = async_engine_from_config(
-        configuration,
-        prefix="sqlalchemy.",
+    db_url = settings.database_url
+    # Auth Proxy exposes a plain TCP socket locally; asyncpg must not attempt SSL.
+    connect_args: dict = {}
+    if "127.0.0.1" in db_url or "localhost" in db_url:
+        connect_args["ssl"] = False
+
+    connectable = create_async_engine(
+        db_url,
         poolclass=pool.NullPool,
-        future=True,
+        connect_args=connect_args,
     )
 
     async with connectable.connect() as connection:
