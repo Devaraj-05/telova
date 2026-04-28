@@ -80,18 +80,14 @@ def _build_engine() -> AsyncEngine:
             pool_pre_ping=True,
         )
 
-    # asyncpg uses ssl= connect_arg; strip psycopg2-style ?sslmode=disable
-    db_url = settings.database_url
-    connect_args: dict = {}
-    if "sslmode=disable" in db_url:
-        db_url = re.sub(r"[?&]sslmode=disable", "", db_url).rstrip("?")
-        connect_args["ssl"] = False
+    # asyncpg doesn't understand psycopg2-style ?sslmode=...; strip it and let
+    # asyncpg negotiate SSL with the server (AlloyDB requires SSL on VPC).
+    db_url = re.sub(r"[?&]sslmode=[^&]*", "", settings.database_url).rstrip("?")
 
     return create_async_engine(
         db_url,
         future=True,
         echo=False,
-        connect_args=connect_args,
     )
 
 

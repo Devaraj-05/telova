@@ -36,7 +36,7 @@ if [[ -n "${ALLOYDB_HOST:-}" && -n "${ALLOYDB_PASSWORD:-}" ]]; then
   ALLOYDB_USER="${ALLOYDB_USER:-postgres}"
   ALLOYDB_DATABASE="${ALLOYDB_DATABASE:-telova}"
   ENCODED_PASSWORD="$(python3 -c "import urllib.parse, os; print(urllib.parse.quote(os.environ['ALLOYDB_PASSWORD'], safe=''))")"
-  DATABASE_URL="postgresql+asyncpg://${ALLOYDB_USER}:${ENCODED_PASSWORD}@${ALLOYDB_HOST}:5432/${ALLOYDB_DATABASE}?sslmode=disable"
+  DATABASE_URL="postgresql+asyncpg://${ALLOYDB_USER}:${ENCODED_PASSWORD}@${ALLOYDB_HOST}:5432/${ALLOYDB_DATABASE}"
   echo "  ✓ Using AlloyDB at ${ALLOYDB_HOST}/${ALLOYDB_DATABASE}"
 
   : "${VPC_NETWORK:?Set VPC_NETWORK (the VPC AlloyDB lives on) when using AlloyDB.}"
