@@ -111,6 +111,11 @@ def upgrade() -> None:
         # Views rely on PostgreSQL's current_setting(); skip for SQLite / other.
         return
 
+    # Drop any pre-existing view first; CREATE OR REPLACE VIEW cannot change
+    # column names, so a stale prior version would block the migration.
+    for stmt in _DROP_VIEWS:
+        op.execute(stmt)
+
     op.execute(_VIEW_GOAL_EXECUTION)
     op.execute(_VIEW_SCHEDULE_PRESSURE)
     op.execute(_VIEW_AGENT_ACTIVITY)
