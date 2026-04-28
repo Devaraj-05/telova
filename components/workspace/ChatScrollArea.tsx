@@ -19,6 +19,7 @@ import { TimelinePreviewCard } from "@/components/workspace/messages/TimelinePre
 import { ProposalActionsCard } from "@/components/workspace/messages/ProposalActionsCard";
 import { ScheduleProgressCard } from "@/components/workspace/messages/ScheduleProgressCard";
 import { SyncSuccessCard } from "@/components/workspace/messages/SyncSuccessCard";
+import { AgentThinkingBubble } from "@/components/workspace/messages/AgentThinkingBubble";
 
 interface AdjustTimelineConfig {
   hoursPerDay: number;
@@ -86,6 +87,8 @@ export function ChatScrollArea({
                 timestamp={formatShortDate(message.createdAt)}
               />
             );
+          case "thinking":
+            return <AgentThinkingBubble key={message.id} />;
           case "analysis":
             return <AgentAnalysisCard key={message.id} data={message.data} />;
           case "activity":

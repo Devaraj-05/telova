@@ -33,6 +33,7 @@ import {
   fetchSystemStatus,
   previewGoalPlan,
   sendChatMessage,
+  sendWorkspaceChatMessage,
 } from "@/lib/workspace/api";
 import type { ChatHistoryItem } from "@/lib/workspace/api";
 import type {
@@ -218,6 +219,25 @@ export function useWorkspaceController(userId: string | null) {
     [],
   );
 
+  const showThinking = useCallback((): string => {
+    const id = createMessageId("thinking");
+    setMessages((current) => [
+      ...current,
+      { id, type: "thinking", createdAt: nowIso() },
+    ]);
+    return id;
+  }, []);
+
+  const resolveThinking = useCallback((thinkingId: string, text: string) => {
+    setMessages((current) =>
+      current.map((m) =>
+        m.id === thinkingId
+          ? ({ id: thinkingId, type: "agent_reply", text, createdAt: nowIso() } as ChatMessage)
+          : m,
+      ),
+    );
+  }, []);
+
   const handleResetWorkspace = useCallback(() => {
     setMessages([createWelcomeMessage()]);
     setComposerValue("");
@@ -299,6 +319,7 @@ export function useWorkspaceController(userId: string | null) {
 
       const planPrompt = buildAIPlanPrompt(completedDraft);
 
+      const planThinkingId = showThinking();
       let aiPlan = "";
       try {
         aiPlan = await sendChatMessage(planPrompt, chatHistory);
@@ -310,6 +331,7 @@ export function useWorkspaceController(userId: string | null) {
       } catch {
         aiPlan = buildDynamicIntro(completedDraft.prompt, completedDraft);
       }
+      resolveThinking(planThinkingId, aiPlan);
 
       const updatedDraft = {
         ...completedDraft,
@@ -317,41 +339,28 @@ export function useWorkspaceController(userId: string | null) {
       };
       setDraft(updatedDraft);
 
-      pushMessages([
-        {
-          id: createMessageId("agent_reply"),
-          type: "agent_reply",
-          createdAt: nowIso(),
-          text: aiPlan,
-        },
-      ]);
-
       setIsBusy(false);
       setChatPhase("plan_shown");
 
-      // Ask if they want to turn it into a calendar schedule
+      // Ask if they want to turn it into a calendar schedule (plain text, no buttons)
       const calendarFollowup: FollowupQuestion = {
         id: createMessageId("followup"),
         field: "calendarSync",
-        prompt: "Would you like me to turn this into a day-by-day calendar schedule?",
-        helperText:
-          "I'll create a visual timeline with daily tasks and can sync them to your Google Calendar and Tasks.",
-        options: [
-          { label: "Yes, create my schedule", value: "sync calendar" },
-          { label: "No, I'll manage manually", value: "manual only" },
-        ],
+        prompt: "Would you like me to turn this into a day-by-day calendar schedule? I can create a visual timeline with daily tasks and sync them to your Google Calendar and Tasks.\n\nJust reply yes or no.",
+        helperText: "",
+        options: [],
       };
       setPendingFollowup(calendarFollowup);
       pushMessages([
         {
           id: calendarFollowup.id,
-          type: "followup",
+          type: "agent_reply",
           createdAt: nowIso(),
-          data: calendarFollowup,
+          text: calendarFollowup.prompt,
         },
       ]);
     },
-    [chatHistory, pushMessages],
+    [chatHistory, pushMessages, showThinking, resolveThinking],
   );
 
   const handleStartGoalFlow = useCallback(
@@ -380,6 +389,7 @@ export function useWorkspaceController(userId: string | null) {
       // Get a dynamic, goal-specific intro from Vertex AI (no analysis/activity cards)
       const agentIntroPrompt = `The user wants to: "${prompt}". In 2-3 concise sentences, acknowledge their goal and briefly explain that you'll create a personalized day-by-day plan for them. Be specific to their goal. End by saying you need to know a bit about their background first to make the plan right.`;
 
+      const introThinkingId = showThinking();
       let agentIntro = "";
       try {
         agentIntro = await sendChatMessage(agentIntroPrompt, []);
@@ -390,28 +400,20 @@ export function useWorkspaceController(userId: string | null) {
       } catch {
         agentIntro = buildDynamicIntro(prompt, nextDraft);
       }
-
-      pushMessages([
-        {
-          id: createMessageId("agent_reply"),
-          type: "agent_reply",
-          createdAt: nowIso(),
-          text: agentIntro,
-        },
-      ]);
+      resolveThinking(introThinkingId, agentIntro);
 
       setIsBusy(false);
 
-      // First followup: ask about background
+      // First followup: ask about background as plain text (no option buttons)
       const followup = nextFollowupQuestion(nextDraft);
       if (followup) {
         setPendingFollowup(followup);
         pushMessages([
           {
             id: followup.id,
-            type: "followup",
+            type: "agent_reply",
             createdAt: nowIso(),
-            data: followup,
+            text: followup.prompt + (followup.helperText ? `\n\n${followup.helperText}` : ""),
           },
         ]);
         return;
@@ -419,7 +421,7 @@ export function useWorkspaceController(userId: string | null) {
 
       await handleGenerateAIPlan(nextDraft);
     },
-    [activeUserId, handleGenerateAIPlan, pushMessages],
+    [activeUserId, handleGenerateAIPlan, pushMessages, showThinking, resolveThinking],
   );
 
   const handleFollowupReply = useCallback(
@@ -462,9 +464,9 @@ export function useWorkspaceController(userId: string | null) {
         pushMessages([
           {
             id: nextQuestion.id,
-            type: "followup",
+            type: "agent_reply",
             createdAt: nowIso(),
-            data: nextQuestion,
+            text: nextQuestion.prompt + (nextQuestion.helperText ? `\n\n${nextQuestion.helperText}` : ""),
           },
         ]);
         return;
@@ -733,37 +735,35 @@ export function useWorkspaceController(userId: string | null) {
       }
     }
 
-    // Raw chat via Vertex AI
+    // Raw chat via workspace-aware Vertex AI
     pushMessages([createUserMessage(value)]);
     setIsBusy(true);
     setChatHistory((prev) => [...prev, { role: "user", content: value }]);
 
+    const chatThinkingId = showThinking();
     try {
-      const reply = await sendChatMessage(value, chatHistory);
+      const result = await sendWorkspaceChatMessage(
+        activeUserId ?? "demo-user",
+        value,
+        chatHistory,
+        createdGoal?.goal?.id,
+      );
+      const reply = result.message;
       setChatHistory((prev) => [...prev, { role: "assistant", content: reply }]);
-      pushMessages([
-        {
-          id: createMessageId("agent_reply"),
-          type: "agent_reply",
-          createdAt: nowIso(),
-          text: reply,
-        },
-      ]);
+      resolveThinking(chatThinkingId, reply);
     } catch {
-      pushMessages([
-        {
-          id: createMessageId("agent_reply"),
-          type: "agent_reply",
-          createdAt: nowIso(),
-          text: "I'm having trouble connecting to the AI right now. Please try again in a moment.",
-        },
-      ]);
+      resolveThinking(
+        chatThinkingId,
+        "I couldn't reach the planning agent right now. Please try again in a moment.",
+      );
     } finally {
       setIsBusy(false);
     }
   }, [
+    activeUserId,
     chatHistory,
     composerValue,
+    createdGoal,
     draft,
     handleFollowupReply,
     handleGeneratePreview,
@@ -773,6 +773,8 @@ export function useWorkspaceController(userId: string | null) {
     pendingFollowup,
     pushMessages,
     handleStartGoalFlow,
+    showThinking,
+    resolveThinking,
   ]);
 
   const handleQuickAction = useCallback(

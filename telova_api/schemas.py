@@ -20,6 +20,24 @@ class ChatResponse(BaseModel):
     reply: str
 
 
+class WorkspaceChatRequest(BaseModel):
+    user_id: str = Field(..., examples=["demo-user"])
+    message: str = Field(..., examples=["What should I work on today?"])
+    history: list[ChatMessageItem] = Field(default_factory=list)
+    goal_id: str | None = None
+
+
+class WorkspaceChatMetadata(BaseModel):
+    agent: str
+    model: str
+    planning_mode: str
+
+
+class WorkspaceChatResponse(BaseModel):
+    message: str
+    metadata: WorkspaceChatMetadata
+
+
 class GoalCreateRequest(BaseModel):
     user_id: str = Field(..., examples=["demo-user"])
     goal: str = Field(..., examples=["Get promoted to Senior Engineer in 6 months"])

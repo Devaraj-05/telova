@@ -31,6 +31,8 @@ from telova_api.schemas import (
     CalendarEventRead,
     ChatRequest,
     ChatResponse,
+    WorkspaceChatRequest,
+    WorkspaceChatResponse,
     ConflictAlertRead,
     ContextPackageRead,
     CronRequest,
@@ -69,6 +71,7 @@ from telova_api.security import (
 from telova_api.secrets import SecretResolver
 from telova_api.services.auth_service import UserAuthService
 from telova_api.services.chat_service import TelovaChatService
+from telova_api.services.workspace_chat_service import WorkspaceChatService
 from telova_api.services.factory import build_orchestrator
 
 
@@ -163,6 +166,22 @@ async def chat_with_agent(payload: ChatRequest):
     history = [{"role": msg.role, "content": msg.content} for msg in payload.history]
     reply = await chat_service.chat(user_message=payload.message, history=history)
     return ChatResponse(reply=reply)
+
+
+@app.post("/api/v1/workspace/chat", response_model=WorkspaceChatResponse)
+async def workspace_chat(
+    payload: WorkspaceChatRequest,
+    session: AsyncSession = Depends(get_session),
+):
+    service = WorkspaceChatService(settings=settings, session=session)
+    history = [{"role": msg.role, "content": msg.content} for msg in payload.history]
+    result = await service.chat(
+        user_id=payload.user_id,
+        user_message=payload.message,
+        history=history,
+        goal_id=payload.goal_id,
+    )
+    return WorkspaceChatResponse(**result)
 
 
 @app.post("/api/v1/auth/signup", response_model=AuthResponse)

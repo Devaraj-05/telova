@@ -111,3 +111,20 @@ export async function sendChatMessage(
   });
   return res.reply;
 }
+
+export interface WorkspaceChatResponse {
+  message: string;
+  metadata: { agent: string; model: string; planning_mode: string };
+}
+
+export async function sendWorkspaceChatMessage(
+  userId: string,
+  message: string,
+  history: ChatHistoryItem[] = [],
+  goalId?: string,
+): Promise<WorkspaceChatResponse> {
+  return apiRequest<WorkspaceChatResponse>("/api/v1/workspace/chat", {
+    method: "POST",
+    body: JSON.stringify({ user_id: userId, message, history, goal_id: goalId ?? null }),
+  });
+}
