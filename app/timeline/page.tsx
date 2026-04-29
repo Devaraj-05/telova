@@ -9,6 +9,8 @@ import {
   ChevronRight,
   Circle,
   Clock,
+  Target,
+  TrendingUp,
 } from "lucide-react";
 
 import { useAuth } from "@/components/auth/AuthProvider";
@@ -16,6 +18,7 @@ import { RequireAuth } from "@/components/auth/RequireAuth";
 import { WorkspaceSidebar } from "@/components/workspace/WorkspaceSidebar";
 import { fetchDashboard, fetchTasks } from "@/lib/workspace/api";
 import type { DashboardRead, TaskRead } from "@/lib/workspace/types";
+import { cn } from "@/lib/utils";
 
 interface CalendarTask {
   id: string;
@@ -321,35 +324,86 @@ export default function TimelinePage() {
         </div>
 
         <main className="flex min-h-screen flex-1 flex-col overflow-hidden">
-          <div className="border-b border-border px-6 py-4">
-            <div className="flex items-center justify-between">
+          {/* ── Header ── */}
+          <header className="shrink-0 border-b border-border">
+            <div className="flex h-[72px] items-center justify-between px-6">
               <div className="flex items-center gap-3">
                 <CalendarRange className="size-5 text-brand" />
                 <div>
-                  <h1 className="text-lg font-semibold text-text">Timeline</h1>
+                  <h1 className="text-xl font-semibold text-text">Timeline</h1>
                   {goalMeta && (
-                    <p className="text-xs text-muted">{goalMeta.title}</p>
+                    <p className="text-xs text-muted line-clamp-1 max-w-xs">{goalMeta.title}</p>
                   )}
                 </div>
               </div>
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-1 rounded-xl border border-border bg-card/60 p-1">
                 <button
                   type="button"
                   onClick={() => setView("month")}
-                  className={`rounded-xl px-3 py-1.5 text-xs font-semibold transition ${view === "month" ? "bg-brand text-white" : "text-muted hover:text-text"}`}
+                  className={cn(
+                    "rounded-lg px-4 py-1.5 text-xs font-semibold transition",
+                    view === "month" ? "bg-brand text-white shadow-sm" : "text-muted hover:text-text",
+                  )}
                 >
                   Month
                 </button>
                 <button
                   type="button"
                   onClick={() => setView("week")}
-                  className={`rounded-xl px-3 py-1.5 text-xs font-semibold transition ${view === "week" ? "bg-brand text-white" : "text-muted hover:text-text"}`}
+                  className={cn(
+                    "rounded-lg px-4 py-1.5 text-xs font-semibold transition",
+                    view === "week" ? "bg-brand text-white shadow-sm" : "text-muted hover:text-text",
+                  )}
                 >
                   Week
                 </button>
               </div>
             </div>
-          </div>
+
+            {/* Stats strip */}
+            {hasTasks && (
+              <div className="flex items-center gap-6 border-t border-border/60 bg-card/30 px-6 py-2.5">
+                {[
+                  {
+                    icon: Target,
+                    label: "Total tasks",
+                    value: tasks.length,
+                    color: "text-brand",
+                  },
+                  {
+                    icon: CheckCircle2,
+                    label: "Completed",
+                    value: tasks.filter(t => t.status === "done").length,
+                    color: "text-success",
+                  },
+                  {
+                    icon: Clock,
+                    label: "Pending",
+                    value: tasks.filter(t => t.status !== "done").length,
+                    color: "text-warning",
+                  },
+                  {
+                    icon: TrendingUp,
+                    label: "Progress",
+                    value: `${tasks.length > 0 ? Math.round((tasks.filter(t => t.status === "done").length / tasks.length) * 100) : 0}%`,
+                    color: "text-violet-400",
+                  },
+                ].map(({ icon: Icon, label, value, color }) => (
+                  <div key={label} className="flex items-center gap-2">
+                    <Icon className={cn("size-3.5", color)} />
+                    <span className="text-xs text-muted">{label}:</span>
+                    <span className={cn("text-xs font-semibold", color)}>{value}</span>
+                  </div>
+                ))}
+                {goalMeta?.deadline && (
+                  <div className="ml-auto flex items-center gap-1.5 text-xs text-muted">
+                    <Clock className="size-3" />
+                    Deadline: {new Date(goalMeta.deadline).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}
+                  </div>
+                )}
+              </div>
+            )}
+          </header>
 
           <div className="flex min-h-0 flex-1">
             <div className="flex min-h-0 flex-1 flex-col overflow-auto p-6">
@@ -509,62 +563,76 @@ export default function TimelinePage() {
               )}
             </div>
 
-            <div className="hidden w-96 shrink-0 border-l border-border lg:flex lg:flex-col">
-              <div className="border-b border-border px-4 py-3">
+            {/* ── Day detail panel ── */}
+            <div className="hidden w-80 shrink-0 border-l border-border lg:flex lg:flex-col xl:w-96">
+              <div className="flex items-center justify-between border-b border-border px-5 py-3">
                 <p className="text-sm font-semibold text-text">
                   {selectedDate
                     ? new Date(`${selectedDate}T00:00:00`).toLocaleDateString("en-US", {
-                        weekday: "long",
-                        month: "long",
-                        day: "numeric",
+                        weekday: "long", month: "long", day: "numeric",
                       })
                     : "Select a day"}
                 </p>
+                {selectedTasks.length > 0 && (
+                  <span className="rounded-full bg-brand/15 px-2 py-0.5 text-xs font-semibold text-brand">
+                    {selectedTasks.length} task{selectedTasks.length !== 1 ? "s" : ""}
+                  </span>
+                )}
               </div>
+
               <div className="flex-1 overflow-auto p-4">
                 {selectedTasks.length === 0 ? (
-                  <div className="mt-6 text-center">
-                    <Circle className="mx-auto size-6 text-muted/30" />
-                    <p className="mt-2 text-xs text-muted">No tasks on this day</p>
+                  <div className="flex flex-col items-center gap-2 py-12 text-center">
+                    <Circle className="size-8 text-muted/20" />
+                    <p className="text-xs text-muted">No tasks on this day</p>
                   </div>
                 ) : (
                   <div className="space-y-3">
                     {selectedTasks.map((task) => (
                       <div
                         key={task.id}
-                        className="rounded-xl border border-border bg-white/[0.03] p-3"
+                        className={cn(
+                          "rounded-xl border p-4 transition",
+                          task.status === "done"
+                            ? "border-success/20 bg-success/5"
+                            : "border-border bg-card/60 hover:border-brand/25",
+                        )}
                       >
                         <div className="flex items-start justify-between gap-2">
-                          <div className="flex-1">
-                            <p className="text-sm font-semibold text-text">{task.title}</p>
-                            <p className="mt-0.5 text-xs text-muted">
-                              {task.taskType} · {task.durationLabel}
+                          <div className="min-w-0 flex-1">
+                            <p className={cn(
+                              "text-sm font-semibold leading-snug",
+                              task.status === "done" ? "text-muted line-through" : "text-text",
+                            )}>
+                              {task.title}
                             </p>
-                            {task.timeLabel && (
-                              <p className="mt-1 text-xs text-muted">{task.timeLabel}</p>
-                            )}
+                            <div className="mt-1.5 flex flex-wrap items-center gap-2">
+                              <span className="rounded-md bg-brand/10 px-2 py-0.5 text-[10px] font-semibold text-brand">
+                                {task.taskType}
+                              </span>
+                              <span className="text-[10px] text-muted">{task.durationLabel}</span>
+                              {task.timeLabel && (
+                                <span className="flex items-center gap-1 text-[10px] text-muted">
+                                  <Clock className="size-2.5" /> {task.timeLabel}
+                                </span>
+                              )}
+                            </div>
                           </div>
                           {task.status === "done" ? (
-                            <CheckCircle2 className="mt-0.5 size-4 shrink-0 text-emerald-400" />
+                            <CheckCircle2 className="mt-0.5 size-4 shrink-0 text-success" />
                           ) : (
-                            <Circle className="mt-0.5 size-4 shrink-0 text-muted/40" />
+                            <Circle className="mt-0.5 size-4 shrink-0 text-muted/30" />
                           )}
                         </div>
 
-                        {task.details && (
-                          <p className="mt-3 text-xs leading-5 text-muted">
-                            {task.details}
-                          </p>
-                        )}
-
                         {task.specificTasks && task.specificTasks.length > 0 && (
-                          <ul className="mt-3 space-y-1">
+                          <ul className="mt-3 space-y-1.5 border-t border-border/60 pt-3">
                             {task.specificTasks.map((item, index) => (
                               <li
                                 key={`${task.id}-${index}`}
-                                className="flex items-start gap-1.5 text-xs text-muted"
+                                className="flex items-start gap-2 text-xs text-muted"
                               >
-                                <span className="mt-1 size-1 shrink-0 rounded-full bg-brand/50" />
+                                <span className="mt-1.5 size-1 shrink-0 rounded-full bg-brand/50" />
                                 {item}
                               </li>
                             ))}
@@ -577,22 +645,15 @@ export default function TimelinePage() {
               </div>
 
               {goalMeta && (
-                <div className="border-t border-border p-4">
-                  <p className="text-xs font-semibold uppercase tracking-wide text-muted">
-                    Active Goal
-                  </p>
-                  <p className="mt-1 line-clamp-2 text-sm text-text">{goalMeta.title}</p>
+                <div className="shrink-0 border-t border-border bg-card/40 p-4">
+                  <p className="text-[10px] font-semibold uppercase tracking-wider text-muted">Active Goal</p>
+                  <p className="mt-1.5 line-clamp-2 text-sm font-medium text-text">{goalMeta.title}</p>
                   {goalMeta.deadline && (
-                    <div className="mt-2 flex items-center gap-1.5">
-                      <Clock className="size-3 text-muted" />
-                      <p className="text-xs text-muted">
-                        Deadline:{" "}
-                        {new Date(goalMeta.deadline).toLocaleDateString("en-US", {
-                          month: "short",
-                          day: "numeric",
-                          year: "numeric",
-                        })}
-                      </p>
+                    <div className="mt-2 flex items-center gap-1.5 text-xs text-muted">
+                      <Clock className="size-3" />
+                      Deadline: {new Date(goalMeta.deadline).toLocaleDateString("en-US", {
+                        month: "short", day: "numeric", year: "numeric",
+                      })}
                     </div>
                   )}
                 </div>
