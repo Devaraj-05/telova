@@ -53,6 +53,8 @@ class WorkspaceChatService:
             goal = None
             if goal_id:
                 goal = await goal_repo.get(goal_id)
+                if goal is not None and goal.user_id != user_id:
+                    goal = None
             if goal is None:
                 active = await goal_repo.list_active(user_id)
                 goal = active[0] if active else None

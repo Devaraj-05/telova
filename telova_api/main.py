@@ -117,6 +117,7 @@ app.add_middleware(
     auth_mode=settings.api_auth_mode,
     api_key=api_key,
     cron_token=cron_token,
+    auth_token_secret=settings.auth_token_secret,
 )
 app.add_middleware(
     RateLimitMiddleware,
@@ -146,6 +147,11 @@ async def resolve_user_id(
     return current_user.id if current_user is not None else user_id
 
 
+def ensure_owner(resource_user_id: str | None, user_id: str) -> None:
+    if resource_user_id != user_id:
+        raise HTTPException(status_code=404, detail="Resource not found.")
+
+
 async def get_auth_service(session: AsyncSession = Depends(get_session)):
     return UserAuthService(
         settings=settings,
@@ -172,11 +178,13 @@ async def chat_with_agent(payload: ChatRequest):
 async def workspace_chat(
     payload: WorkspaceChatRequest,
     session: AsyncSession = Depends(get_session),
+    current_user=Depends(get_optional_current_user),
 ):
+    effective_user_id = current_user.id if current_user is not None else payload.user_id
     service = WorkspaceChatService(settings=settings, session=session)
     history = [{"role": msg.role, "content": msg.content} for msg in payload.history]
     result = await service.chat(
-        user_id=payload.user_id,
+        user_id=effective_user_id,
         user_message=payload.message,
         history=history,
         goal_id=payload.goal_id,
@@ -370,23 +378,41 @@ async def preview_goal(
 
 
 @app.get("/api/v1/goals/{goal_id}", response_model=GoalRead)
-async def get_goal(goal_id: str, orchestrator=Depends(get_orchestrator)):
+async def get_goal(
+    goal_id: str,
+    user_id: str = Depends(resolve_user_id),
+    orchestrator=Depends(get_orchestrator),
+):
     goal = await orchestrator.get_goal(goal_id)
     if goal is None:
         raise HTTPException(status_code=404, detail="Goal not found.")
+    ensure_owner(goal.user_id, user_id)
     return goal
 
 
 @app.get("/api/v1/goals/{goal_id}/dag", response_model=GoalDagResponse)
-async def get_goal_dag(goal_id: str, orchestrator=Depends(get_orchestrator)):
-    dag = await orchestrator.get_goal_dag(goal_id)
-    if dag is None:
+async def get_goal_dag(
+    goal_id: str,
+    user_id: str = Depends(resolve_user_id),
+    orchestrator=Depends(get_orchestrator),
+):
+    goal = await orchestrator.get_goal(goal_id)
+    if goal is None:
         raise HTTPException(status_code=404, detail="Goal not found.")
-    return GoalDagResponse.model_validate(dag)
+    ensure_owner(goal.user_id, user_id)
+    return GoalDagResponse.model_validate(goal.dag_json)
 
 
 @app.get("/api/v1/goals/{goal_id}/tasks", response_model=list[TaskRead])
-async def list_goal_tasks(goal_id: str, orchestrator=Depends(get_orchestrator)):
+async def list_goal_tasks(
+    goal_id: str,
+    user_id: str = Depends(resolve_user_id),
+    orchestrator=Depends(get_orchestrator),
+):
+    goal = await orchestrator.get_goal(goal_id)
+    if goal is None:
+        raise HTTPException(status_code=404, detail="Goal not found.")
+    ensure_owner(goal.user_id, user_id)
     return await orchestrator.get_goal_tasks(goal_id)
 
 
@@ -395,11 +421,13 @@ async def switch_goal(
     goal_id: str,
     payload: GoalSwitchRequest,
     orchestrator=Depends(get_orchestrator),
+    current_user=Depends(get_optional_current_user),
 ):
+    effective_user_id = current_user.id if current_user is not None else payload.user_id
     result = await orchestrator.switch_goal(
         from_goal_id=goal_id,
         to_goal_id=payload.target_goal_id,
-        user_id=payload.user_id,
+        user_id=effective_user_id,
     )
     if result is None:
         raise HTTPException(status_code=404, detail="One or both goals were not found.")
@@ -414,9 +442,14 @@ async def switch_goal(
 async def update_task_status(
     task_id: str,
     payload: TaskUpdateRequest,
+    user_id: str = Depends(resolve_user_id),
     orchestrator=Depends(get_orchestrator),
 ):
-    task = await orchestrator.update_task_status(task_id, payload.status)
+    task = await orchestrator.update_task_status(
+        task_id,
+        payload.status,
+        user_id=user_id,
+    )
     if task is None:
         raise HTTPException(status_code=404, detail="Task not found.")
     return task
@@ -556,12 +589,14 @@ async def create_note(
 async def update_note(
     note_id: str,
     payload: NoteUpdateRequest,
+    user_id: str = Depends(resolve_user_id),
     orchestrator=Depends(get_orchestrator),
 ):
     note = await orchestrator.update_note(
         note_id,
         title=payload.title,
         content=payload.content,
+        user_id=user_id,
     )
     if note is None:
         raise HTTPException(status_code=404, detail="Note not found.")

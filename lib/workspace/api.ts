@@ -15,12 +15,22 @@ import {
 // (/api/* → http://127.0.0.1:8000/api/*).
 const API_BASE_URL =
   process.env.NEXT_PUBLIC_API_BASE_URL?.replace(/\/$/, "") ?? "";
+const AUTH_STORAGE_KEY = "telova.app.token";
+
+function readStoredToken() {
+  if (typeof window === "undefined") {
+    return null;
+  }
+  return window.localStorage.getItem(AUTH_STORAGE_KEY);
+}
 
 async function apiRequest<T>(path: string, init?: RequestInit): Promise<T> {
+  const token = readStoredToken();
   const response = await fetch(`${API_BASE_URL}${path}`, {
     ...init,
     headers: {
       "Content-Type": "application/json",
+      ...(token ? { "X-Authorization": `Bearer ${token}` } : {}),
       ...(init?.headers ?? {}),
     },
     cache: "no-store",

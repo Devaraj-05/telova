@@ -102,6 +102,13 @@ SessionLocal = async_sessionmaker(
 async def init_db() -> None:
     from telova_api import models  # noqa: F401
 
+    if (
+        settings.app_env.strip().lower() in {"production", "prod"}
+        or settings.database_url.startswith("postgresql")
+        or settings.alloydb_instance_name
+    ):
+        return
+
     async with engine.begin() as connection:
         await connection.run_sync(Base.metadata.create_all)
 

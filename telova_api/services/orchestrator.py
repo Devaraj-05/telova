@@ -218,9 +218,17 @@ class TelovaOrchestratorService:
     async def get_goal_tasks(self, goal_id: str) -> list[Task]:
         return await self.task_gateway.list_goal_tasks(goal_id)
 
-    async def update_task_status(self, task_id: str, status: str) -> Task | None:
+    async def update_task_status(
+        self,
+        task_id: str,
+        status: str,
+        *,
+        user_id: str | None = None,
+    ) -> Task | None:
         task = await self.task_repo.get(task_id)
         if task is None:
+            return None
+        if user_id is not None and task.user_id != user_id:
             return None
         return await self.task_gateway.update_status(task, status)
 
@@ -280,9 +288,12 @@ class TelovaOrchestratorService:
         *,
         title: str | None = None,
         content: str | None = None,
+        user_id: str | None = None,
     ):
         note = await self.note_repo.get(note_id)
         if note is None:
+            return None
+        if user_id is not None and note.user_id != user_id:
             return None
         return await self.notes_gateway.update_note(
             note,
@@ -373,6 +384,8 @@ class TelovaOrchestratorService:
         from_goal = await self.goal_repo.get(from_goal_id)
         to_goal = await self.goal_repo.get(to_goal_id)
         if from_goal is None or to_goal is None:
+            return None
+        if from_goal.user_id != user_id or to_goal.user_id != user_id:
             return None
 
         from_tasks = await self.task_repo.list_by_goal(from_goal_id)

@@ -6,6 +6,7 @@ import pytest
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 from telova_api.main import app
+from telova_api.auth import create_access_token
 from telova_api.security import ApiAuthMiddleware
 import telova_api.db as db_module
 
@@ -297,7 +298,7 @@ def test_api_auth_middleware_enforces_api_key():
     )
 
 
-def test_api_auth_middleware_skips_auth_routes():
+def test_api_auth_middleware_skips_public_auth_routes():
     secured = FastAPI()
     secured.add_middleware(
         ApiAuthMiddleware,
@@ -305,9 +306,39 @@ def test_api_auth_middleware_skips_auth_routes():
         api_key="secret-key",
     )
 
-    @secured.get("/api/v1/auth/ping")
+    @secured.get("/api/v1/auth/login")
     async def ping():
         return {"ok": True}
 
     client = TestClient(secured)
-    assert client.get("/api/v1/auth/ping").status_code == 200
+    assert client.get("/api/v1/auth/login").status_code == 200
+
+
+def test_api_auth_middleware_accepts_valid_user_token():
+    secured = FastAPI()
+    secured.add_middleware(
+        ApiAuthMiddleware,
+        auth_mode="api_key",
+        api_key="secret-key",
+        auth_token_secret="token-secret",
+    )
+
+    @secured.get("/api/v1/auth/me")
+    async def me():
+        return {"ok": True}
+
+    token = create_access_token(
+        user_id="user-1",
+        email="user@example.com",
+        secret="token-secret",
+        ttl_minutes=10,
+    )
+    client = TestClient(secured)
+    assert client.get("/api/v1/auth/me").status_code == 401
+    assert (
+        client.get(
+            "/api/v1/auth/me",
+            headers={"X-Authorization": f"Bearer {token}"},
+        ).status_code
+        == 200
+    )

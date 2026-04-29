@@ -1,10 +1,16 @@
 from __future__ import annotations
 
+import base64
 from collections import defaultdict, deque
 from dataclasses import dataclass
+from datetime import datetime, timezone
+import hashlib
+import hmac
 from hmac import compare_digest
+import json
 import logging
 import time
+from typing import Any
 from uuid import uuid4
 
 from fastapi.responses import JSONResponse
@@ -13,6 +19,13 @@ from starlette.requests import Request
 
 
 logger = logging.getLogger("telova.access")
+
+PUBLIC_AUTH_PATHS = {
+    "/api/v1/auth/signup",
+    "/api/v1/auth/login",
+    "/api/v1/auth/google/start",
+    "/api/v1/auth/google/callback",
+}
 
 
 def _auth_header_token(request: Request) -> str | None:
@@ -53,6 +66,44 @@ def _cron_token_from_request(request: Request) -> str | None:
         or _auth_header_token(request)
         or None
     )
+
+
+def _urlsafe_b64decode(value: str) -> bytes:
+    padding = "=" * (-len(value) % 4)
+    return base64.urlsafe_b64decode(value + padding)
+
+
+def _is_valid_access_token(token: str | None, secret: str | None) -> bool:
+    if not token or not secret:
+        return False
+
+    try:
+        encoded_body, encoded_signature = token.split(".", maxsplit=1)
+        expected_signature = hmac_digest(encoded_body, secret)
+        if not compare_digest(expected_signature, encoded_signature):
+            return False
+
+        payload: dict[str, Any] = json.loads(
+            _urlsafe_b64decode(encoded_body).decode("utf-8")
+        )
+    except Exception:
+        return False
+
+    expires_at = payload.get("exp")
+    if expires_at is not None and int(expires_at) < int(
+        datetime.now(timezone.utc).timestamp()
+    ):
+        return False
+    return payload.get("kind") == "access" and bool(payload.get("sub"))
+
+
+def hmac_digest(encoded_body: str, secret: str) -> str:
+    signature = hmac.new(
+        secret.encode("utf-8"),
+        encoded_body.encode("utf-8"),
+        hashlib.sha256,
+    ).digest()
+    return base64.urlsafe_b64encode(signature).decode("utf-8").rstrip("=")
 
 
 @dataclass
@@ -140,11 +191,13 @@ class ApiAuthMiddleware(BaseHTTPMiddleware):
         auth_mode: str,
         api_key: str | None = None,
         cron_token: str | None = None,
+        auth_token_secret: str | None = None,
     ) -> None:
         super().__init__(app)
         self.auth_mode = auth_mode.strip().lower()
         self.api_key = api_key or None
         self.cron_token = cron_token or None
+        self.auth_token_secret = auth_token_secret or None
 
     async def dispatch(self, request: Request, call_next):
         path = request.url.path
@@ -152,12 +205,13 @@ class ApiAuthMiddleware(BaseHTTPMiddleware):
             return await call_next(request)
         if self.auth_mode == "disabled":
             return await call_next(request)
-        if path in {"/api/openapi.json"} or path.startswith("/api/v1/auth/"):
+        if path in {"/api/openapi.json"} or path in PUBLIC_AUTH_PATHS:
             return await call_next(request)
 
         is_cron_path = path.startswith("/api/v1/webhooks/cron/")
         provided_api_key = _api_key_from_request(request)
         provided_cron_token = _cron_token_from_request(request)
+        provided_bearer_token = _auth_header_token(request)
 
         authorized = False
         if self.api_key and provided_api_key:
@@ -166,6 +220,11 @@ class ApiAuthMiddleware(BaseHTTPMiddleware):
             authorized = authorized or compare_digest(
                 provided_cron_token,
                 self.cron_token,
+            )
+        if not is_cron_path:
+            authorized = authorized or _is_valid_access_token(
+                provided_bearer_token,
+                self.auth_token_secret,
             )
 
         if authorized:
