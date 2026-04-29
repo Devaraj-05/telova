@@ -4,7 +4,7 @@ import asyncio
 from logging.config import fileConfig
 
 from alembic import context
-from sqlalchemy import create_engine, engine_from_config, pool
+from sqlalchemy import create_engine, pool
 from sqlalchemy.ext.asyncio import create_async_engine
 
 from telova_api.config import get_settings
@@ -40,28 +40,6 @@ def run_migrations_offline() -> None:
         context.run_migrations()
 
 
-def run_migrations_online() -> None:
-    db_url = settings.database_url
-
-    if "+aiosqlite" in db_url:
-        asyncio.run(run_async_migrations())
-        return
-
-    # For PostgreSQL (including +asyncpg URLs): use sync psycopg2.
-    # asyncpg's SSL negotiation with the AlloyDB Auth Proxy is unreliable;
-    # psycopg2 + sslmode=disable bypasses the issue entirely.
-    pg_url = db_url.replace("+asyncpg", "")
-    connectable = create_engine(pg_url, poolclass=pool.NullPool)
-    with connectable.connect() as connection:
-        context.configure(
-            connection=connection,
-            target_metadata=target_metadata,
-            compare_type=True,
-        )
-        with context.begin_transaction():
-            context.run_migrations()
-
-
 def do_run_migrations(connection) -> None:
     context.configure(
         connection=connection,
@@ -74,15 +52,35 @@ def do_run_migrations(connection) -> None:
 
 
 async def run_async_migrations() -> None:
-    connectable = create_async_engine(
-        settings.database_url,
-        poolclass=pool.NullPool,
-    )
-
+    db_url = settings.database_url
+    # Normalise bare postgresql:// -> postgresql+asyncpg:// so asyncpg is used
+    # even when DATABASE_URL omits the driver suffix.
+    if db_url.startswith("postgresql://"):
+        db_url = db_url.replace("postgresql://", "postgresql+asyncpg://", 1)
+    connectable = create_async_engine(db_url, poolclass=pool.NullPool)
     async with connectable.connect() as connection:
         await connection.run_sync(do_run_migrations)
-
     await connectable.dispose()
+
+
+def run_migrations_online() -> None:
+    db_url = settings.database_url
+
+    # Route all postgresql and sqlite URLs through the async path.
+    # The backend image ships asyncpg but not psycopg2.
+    if "postgresql" in db_url or "+aiosqlite" in db_url:
+        asyncio.run(run_async_migrations())
+        return
+
+    connectable = create_engine(db_url, poolclass=pool.NullPool)
+    with connectable.connect() as connection:
+        context.configure(
+            connection=connection,
+            target_metadata=target_metadata,
+            compare_type=True,
+        )
+        with context.begin_transaction():
+            context.run_migrations()
 
 
 if context.is_offline_mode():
