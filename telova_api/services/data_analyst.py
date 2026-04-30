@@ -60,6 +60,27 @@ class ProductivityDataAnalystService:
         limit: int = 10,
     ) -> dict[str, Any]:
         fallback_reason = None
+        direct_plan = self._build_deterministic_plan_if_supported(
+            user_id=user_id,
+            question=question,
+            limit=limit,
+        )
+        if direct_plan is not None:
+            rows = await self._execute_sql(
+                direct_plan.sql,
+                params=direct_plan.params,
+                workspace_user=user_id,
+            )
+            return {
+                "question": question,
+                "summary": self._summarize_rows(question, rows),
+                "generated_sql": direct_plan.sql,
+                "rows": rows,
+                "row_count": len(rows),
+                "execution_mode": direct_plan.mode,
+                "source_objects": direct_plan.source_objects,
+                "fallback_reason": None,
+            }
 
         if self._can_use_vertex_gemini():
             try:
@@ -288,6 +309,15 @@ class ProductivityDataAnalystService:
             "Use only these views: public.telova_goal_execution_secure, "
             "public.telova_schedule_pressure_secure, public.telova_agent_activity_secure.\n"
             "Do not reference any other tables, views, or schemas.\n"
+            "Available columns:\n"
+            "- telova_goal_execution_secure: goal_id, user_id, goal_title, domain, goal_status, "
+            "deadline, deviation, total_tasks, completed_tasks, blocked_tasks, overdue_tasks.\n"
+            "- telova_schedule_pressure_secure: goal_id, user_id, goal_title, goal_status, task_id, "
+            "task_title, phase, task_status, estimated_minutes, scheduled_start, scheduled_end, "
+            "is_overdue, is_blocked, calendar_event_id, calendar_title, calendar_source.\n"
+            "- telova_agent_activity_secure: agent_run_id, user_id, goal_id, agent_name, operation, "
+            "status, runtime, started_at, completed_at, tool_name, sync_operation, sync_status, sync_created_at.\n"
+            "Use goal_title instead of goal_name, task_status instead of task status, and scheduled_end instead of due_at.\n"
             "The secure views are already scoped by current_setting('telova.user_id', true).\n"
             "Prefer concise SQL and include ORDER BY when useful.\n"
             "Question: "
@@ -503,6 +533,35 @@ class ProductivityDataAnalystService:
             params={"user_id": user_id, "result_limit": limit},
             source_objects=["goals", "tasks"],
             mode="deterministic_sql",
+        )
+
+    def _build_deterministic_plan_if_supported(
+        self,
+        *,
+        user_id: str,
+        question: str,
+        limit: int,
+    ) -> SqlExecutionPlan | None:
+        lower = question.lower()
+        deterministic_keywords = (
+            "overdue",
+            "blocked",
+            "tomorrow",
+            "today",
+            "schedule",
+            "scheduled",
+            "deviation",
+            "risk",
+            "at risk",
+            "completed",
+            "finished",
+        )
+        if not any(keyword in lower for keyword in deterministic_keywords):
+            return None
+        return self._build_fallback_plan(
+            user_id=user_id,
+            question=question,
+            limit=limit,
         )
 
     def _normalize_sql_text(self, sql_text: str) -> str:

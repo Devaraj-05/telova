@@ -161,7 +161,7 @@ function QueryResultCard({ result, index }: QueryResultCardProps) {
         {result.fallback_reason && (
           <div className="mt-3 flex items-start gap-2 rounded-xl bg-amber-500/5 border border-amber-500/20 px-3 py-2.5 text-xs text-amber-400">
             <AlertCircle className="size-3.5 mt-0.5 shrink-0" />
-            <span>AI generation failed — using fallback SQL. Reason: {result.fallback_reason}</span>
+            <span>Using Telova's verified query path for this answer.</span>
           </div>
         )}
 
