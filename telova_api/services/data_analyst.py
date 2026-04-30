@@ -86,6 +86,7 @@ class ProductivityDataAnalystService:
                 }
             except Exception as exc:
                 fallback_reason = str(exc)
+                await self._reset_failed_transaction()
 
         if self._can_use_alloydb_ai():
             try:
@@ -112,6 +113,7 @@ class ProductivityDataAnalystService:
                 }
             except Exception as exc:
                 fallback_reason = str(exc)
+                await self._reset_failed_transaction()
 
         plan = self._build_fallback_plan(
             user_id=user_id,
@@ -189,6 +191,12 @@ class ProductivityDataAnalystService:
             text("SELECT set_config('telova.user_id', :user_id, true)"),
             {"user_id": user_id},
         )
+
+    async def _reset_failed_transaction(self) -> None:
+        try:
+            await self.session.rollback()
+        except Exception:
+            pass
 
     async def _generate_vertex_sql(self, *, user_id: str, question: str) -> str:
         await self._set_workspace_user(user_id)
@@ -334,7 +342,7 @@ class ProductivityDataAnalystService:
                 """,
                 params={
                     "user_id": user_id,
-                    "window_end": now.isoformat(),
+                    "window_end": now,
                     "result_limit": limit,
                 },
                 source_objects=["goals", "tasks"],
@@ -388,8 +396,8 @@ class ProductivityDataAnalystService:
                 """,
                 params={
                     "user_id": user_id,
-                    "window_start": window_start.isoformat(),
-                    "window_end": window_end.isoformat(),
+                    "window_start": window_start,
+                    "window_end": window_end,
                     "result_limit": limit,
                 },
                 source_objects=["goals", "tasks"],
@@ -417,8 +425,8 @@ class ProductivityDataAnalystService:
                 """,
                 params={
                     "user_id": user_id,
-                    "window_start": window_start.isoformat(),
-                    "window_end": window_end.isoformat(),
+                    "window_start": window_start,
+                    "window_end": window_end,
                     "result_limit": limit,
                 },
                 source_objects=["calendar_events", "goals"],
@@ -467,7 +475,7 @@ class ProductivityDataAnalystService:
                 """,
                 params={
                     "user_id": user_id,
-                    "completed_since": completed_since.isoformat(),
+                    "completed_since": completed_since,
                     "result_limit": limit,
                 },
                 source_objects=["tasks", "goals"],
