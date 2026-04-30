@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   AlertCircle,
   BarChart3,
@@ -17,8 +17,14 @@ import {
 import { useAuth } from "@/components/auth/AuthProvider";
 import { RequireAuth } from "@/components/auth/RequireAuth";
 import { WorkspaceSidebar } from "@/components/workspace/WorkspaceSidebar";
-import { analyticsQuery } from "@/lib/workspace/api";
-import type { AnalyticsQueryResponse } from "@/lib/workspace/types";
+import {
+  analyticsQuery,
+  createChatSession,
+  deleteChatSession,
+  listChatSessions,
+  updateChatSession,
+} from "@/lib/workspace/api";
+import type { AnalyticsQueryResponse, ChatSession } from "@/lib/workspace/types";
 import { cn } from "@/lib/utils";
 
 const SUGGESTED_QUESTIONS = [
@@ -30,6 +36,17 @@ const SUGGESTED_QUESTIONS = [
   "What did I complete in the last 7 days?",
   "What's scheduled for tomorrow?",
 ];
+
+const ACTIVE_SESSION_KEY = "telova_active_analytics_session";
+
+function messagesToResults(
+  messages: Array<Record<string, unknown>> | undefined | null,
+): AnalyticsQueryResponse[] {
+  if (!messages) return [];
+  return messages.filter(
+    (m) => !!m && typeof m === "object" && "question" in m,
+  ) as unknown as AnalyticsQueryResponse[];
+}
 
 const EXECUTION_MODE_STYLES: Record<string, { label: string; color: string }> = {
   vertex_gemini_nl_sql: {
@@ -196,10 +213,119 @@ function QueryResultCard({ result, index }: QueryResultCardProps) {
 export default function AnalyticsPage() {
   const { user, logout } = useAuth();
   const [question, setQuestion] = useState("");
+  const [sessions, setSessions] = useState<ChatSession[]>([]);
+  const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
   const [results, setResults] = useState<AnalyticsQueryResponse[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [sessionsLoaded, setSessionsLoaded] = useState(false);
   const inputRef = useRef<HTMLTextAreaElement>(null);
+
+  // Hydrate the last-active analytics session from localStorage so reloading
+  // the page doesn't drop you back to the empty state.
+  useEffect(() => {
+    try {
+      const stored = localStorage.getItem(ACTIVE_SESSION_KEY);
+      if (stored) setActiveSessionId(stored);
+    } catch {
+      // ignore
+    }
+  }, []);
+
+  useEffect(() => {
+    if (activeSessionId) {
+      try {
+        localStorage.setItem(ACTIVE_SESSION_KEY, activeSessionId);
+      } catch {
+        // ignore
+      }
+    }
+  }, [activeSessionId]);
+
+  // On login, load this user's persisted analytics sessions from the backend.
+  useEffect(() => {
+    if (!user?.id) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const remote = await listChatSessions("analytics");
+        if (cancelled) return;
+        const mapped: ChatSession[] = remote.map((s) => ({
+          id: s.id,
+          title: s.title,
+          createdAt: s.created_at,
+          goalPrompt: s.goal_prompt ?? "",
+        }));
+        setSessions(mapped);
+
+        const targetId = activeSessionId && mapped.some((s) => s.id === activeSessionId)
+          ? activeSessionId
+          : mapped[0]?.id ?? null;
+
+        if (targetId) {
+          const target = remote.find((s) => s.id === targetId);
+          setActiveSessionId(targetId);
+          setResults(messagesToResults(target?.messages));
+        } else {
+          setActiveSessionId(null);
+          setResults([]);
+        }
+      } catch {
+        // Backend unreachable — leave sessions empty so the user can still ask
+        // questions in a transient (unsaved) session.
+      } finally {
+        if (!cancelled) setSessionsLoaded(true);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user?.id]);
+
+  const ensureActiveSession = useCallback(
+    async (firstQuestion: string): Promise<string | null> => {
+      if (activeSessionId) return activeSessionId;
+      if (!user?.id) return null;
+
+      const title =
+        firstQuestion.length > 60
+          ? firstQuestion.slice(0, 60) + "..."
+          : firstQuestion;
+      try {
+        const created = await createChatSession({
+          kind: "analytics",
+          title,
+          goal_prompt: firstQuestion,
+          messages: [],
+        });
+        const newSession: ChatSession = {
+          id: created.id,
+          title: created.title,
+          createdAt: created.created_at,
+          goalPrompt: created.goal_prompt ?? firstQuestion,
+        };
+        setSessions((prev) => [newSession, ...prev]);
+        setActiveSessionId(created.id);
+        return created.id;
+      } catch {
+        return null;
+      }
+    },
+    [activeSessionId, user?.id],
+  );
+
+  const persistResults = useCallback(
+    (sessionId: string, nextResults: AnalyticsQueryResponse[]) => {
+      if (!user?.id) return;
+      void updateChatSession(sessionId, {
+        messages: nextResults as unknown as Array<Record<string, unknown>>,
+      }).catch(() => {
+        // Backend unreachable — keep local state; user can retry on reconnect.
+      });
+    },
+    [user?.id],
+  );
 
   const submit = async (q: string) => {
     const trimmed = q.trim();
@@ -207,8 +333,13 @@ export default function AnalyticsPage() {
     setError(null);
     setLoading(true);
     try {
+      const sessionId = await ensureActiveSession(trimmed);
       const result = await analyticsQuery(user.id, trimmed);
-      setResults((prev) => [result, ...prev]);
+      setResults((prev) => {
+        const next = [result, ...prev];
+        if (sessionId) persistResults(sessionId, next);
+        return next;
+      });
       setQuestion("");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Query failed");
@@ -218,12 +349,88 @@ export default function AnalyticsPage() {
     }
   };
 
+  const handleSwitchSession = useCallback(
+    async (sessionId: string) => {
+      if (sessionId === activeSessionId) return;
+      setActiveSessionId(sessionId);
+      setResults([]);
+      setError(null);
+      try {
+        const remote = await listChatSessions("analytics");
+        const target = remote.find((s) => s.id === sessionId);
+        setSessions(
+          remote.map((s) => ({
+            id: s.id,
+            title: s.title,
+            createdAt: s.created_at,
+            goalPrompt: s.goal_prompt ?? "",
+          })),
+        );
+        setResults(messagesToResults(target?.messages));
+      } catch {
+        // Keep local state; show empty if we can't fetch.
+      }
+    },
+    [activeSessionId],
+  );
+
+  const handleNewChat = useCallback(() => {
+    setActiveSessionId(null);
+    setResults([]);
+    setError(null);
+    setQuestion("");
+    try {
+      localStorage.removeItem(ACTIVE_SESSION_KEY);
+    } catch {
+      // ignore
+    }
+  }, []);
+
+  const handleRenameSession = useCallback(
+    async (sessionId: string, nextTitle: string) => {
+      const trimmed = nextTitle.trim();
+      if (!trimmed) return;
+      setSessions((prev) =>
+        prev.map((s) => (s.id === sessionId ? { ...s, title: trimmed } : s)),
+      );
+      if (user?.id) {
+        try {
+          await updateChatSession(sessionId, { title: trimmed });
+        } catch {
+          // local update stays
+        }
+      }
+    },
+    [user?.id],
+  );
+
+  const handleDeleteSession = useCallback(
+    async (sessionId: string) => {
+      const wasActive = sessionId === activeSessionId;
+      setSessions((prev) => prev.filter((s) => s.id !== sessionId));
+      if (wasActive) {
+        setActiveSessionId(null);
+        setResults([]);
+      }
+      if (user?.id) {
+        try {
+          await deleteChatSession(sessionId);
+        } catch {
+          // backend unreachable — local state already updated
+        }
+      }
+    },
+    [activeSessionId, user?.id],
+  );
+
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault();
       submit(question);
     }
   };
+
+  const showEmptyState = results.length === 0 && !loading && sessionsLoaded;
 
   return (
     <RequireAuth>
@@ -233,7 +440,14 @@ export default function AnalyticsPage() {
             activeItem="analytics"
             userName={user?.display_name}
             userEmail={user?.email}
+            chatSessions={sessions}
+            activeSessionId={activeSessionId}
+            chatsLabel="Queries"
             onLogout={logout}
+            onSwitchSession={handleSwitchSession}
+            onNewChat={handleNewChat}
+            onRenameSession={handleRenameSession}
+            onDeleteSession={handleDeleteSession}
           />
         </div>
 
@@ -254,13 +468,15 @@ export default function AnalyticsPage() {
           <div className="flex flex-1 flex-col overflow-hidden">
             {/* Results scroll area */}
             <div className="flex-1 overflow-y-auto px-8 py-6">
-              {results.length === 0 && !loading && (
+              {showEmptyState && (
                 <div className="flex flex-col items-center gap-6 py-12 text-center">
                   <div className="flex size-16 items-center justify-center rounded-3xl bg-brand/10">
                     <BarChart3 className="size-8 text-brand" />
                   </div>
                   <div>
-                    <p className="text-lg font-semibold text-text">Ask your productivity data anything</p>
+                    <p className="text-lg font-semibold text-text">
+                      Ask your productivity data anything
+                    </p>
                     <p className="mt-1 text-sm text-muted max-w-md">
                       Gemini translates your natural-language questions into SQL, runs them against your
                       goals, tasks, and calendar, and returns structured results.
@@ -286,7 +502,9 @@ export default function AnalyticsPage() {
                   <Loader2 className="size-5 animate-spin text-brand shrink-0" />
                   <div>
                     <p className="text-sm font-medium text-text">Generating SQL…</p>
-                    <p className="text-xs text-muted">Gemini is translating your question into a secure query</p>
+                    <p className="text-xs text-muted">
+                      Gemini is translating your question into a secure query
+                    </p>
                   </div>
                 </div>
               )}
@@ -304,7 +522,11 @@ export default function AnalyticsPage() {
               {results.length > 0 && (
                 <div className="space-y-4 max-w-5xl">
                   {results.map((result, i) => (
-                    <QueryResultCard key={i} result={result} index={results.length - 1 - i} />
+                    <QueryResultCard
+                      key={`${result.question}-${i}`}
+                      result={result}
+                      index={results.length - 1 - i}
+                    />
                   ))}
                 </div>
               )}

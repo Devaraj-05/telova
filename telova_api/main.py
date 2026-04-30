@@ -17,6 +17,8 @@ from telova_api.config import get_settings
 from telova_api.db import close_db, get_session, init_db
 from telova_api.logging_utils import configure_logging
 from telova_api.monitoring import configure_monitoring
+from telova_api.models import ChatSession
+from telova_api.repositories.chat_sessions import ChatSessionRepository
 from telova_api.repositories.google_connections import (
     GoogleWorkspaceConnectionRepository,
 )
@@ -31,6 +33,9 @@ from telova_api.schemas import (
     CalendarEventRead,
     ChatRequest,
     ChatResponse,
+    ChatSessionCreateRequest,
+    ChatSessionRead,
+    ChatSessionUpdateRequest,
     WorkspaceChatRequest,
     WorkspaceChatResponse,
     ConflictAlertRead,
@@ -486,6 +491,90 @@ async def analytics_query(
         limit=payload.limit,
     )
     return AnalyticsQueryResponse.model_validate(result)
+
+
+@app.get("/api/v1/chat-sessions", response_model=list[ChatSessionRead])
+async def list_chat_sessions(
+    kind: str = Query(default="workspace"),
+    limit: int = Query(default=100, ge=1, le=500),
+    user_id: str = Depends(resolve_user_id),
+    session: AsyncSession = Depends(get_session),
+):
+    repo = ChatSessionRepository(session)
+    sessions = await repo.list_by_user(user_id=user_id, kind=kind, limit=limit)
+    return [ChatSessionRead.model_validate(s) for s in sessions]
+
+
+@app.post("/api/v1/chat-sessions", response_model=ChatSessionRead)
+async def create_chat_session(
+    payload: ChatSessionCreateRequest,
+    user_id: str = Depends(resolve_user_id),
+    session: AsyncSession = Depends(get_session),
+):
+    repo = ChatSessionRepository(session)
+    chat = await repo.create(
+        ChatSession(
+            user_id=user_id,
+            kind=payload.kind,
+            title=payload.title,
+            goal_prompt=payload.goal_prompt,
+            messages=payload.messages,
+            metadata_json=payload.metadata_json,
+        )
+    )
+    return ChatSessionRead.model_validate(chat)
+
+
+@app.get("/api/v1/chat-sessions/{session_id}", response_model=ChatSessionRead)
+async def get_chat_session(
+    session_id: str,
+    user_id: str = Depends(resolve_user_id),
+    session: AsyncSession = Depends(get_session),
+):
+    repo = ChatSessionRepository(session)
+    chat = await repo.get(session_id)
+    if chat is None or chat.user_id != user_id:
+        raise HTTPException(status_code=404, detail="Chat session not found.")
+    return ChatSessionRead.model_validate(chat)
+
+
+@app.patch("/api/v1/chat-sessions/{session_id}", response_model=ChatSessionRead)
+async def update_chat_session(
+    session_id: str,
+    payload: ChatSessionUpdateRequest,
+    user_id: str = Depends(resolve_user_id),
+    session: AsyncSession = Depends(get_session),
+):
+    repo = ChatSessionRepository(session)
+    chat = await repo.get(session_id)
+    if chat is None or chat.user_id != user_id:
+        raise HTTPException(status_code=404, detail="Chat session not found.")
+
+    if payload.title is not None:
+        chat.title = payload.title
+    if payload.goal_prompt is not None:
+        chat.goal_prompt = payload.goal_prompt
+    if payload.messages is not None:
+        chat.messages = payload.messages
+    if payload.metadata_json is not None:
+        chat.metadata_json = payload.metadata_json
+
+    chat = await repo.save(chat)
+    return ChatSessionRead.model_validate(chat)
+
+
+@app.delete("/api/v1/chat-sessions/{session_id}")
+async def delete_chat_session(
+    session_id: str,
+    user_id: str = Depends(resolve_user_id),
+    session: AsyncSession = Depends(get_session),
+):
+    repo = ChatSessionRepository(session)
+    chat = await repo.get(session_id)
+    if chat is None or chat.user_id != user_id:
+        raise HTTPException(status_code=404, detail="Chat session not found.")
+    await repo.delete(chat)
+    return {"status": "deleted", "id": session_id}
 
 
 @app.get("/api/v1/agent-runs", response_model=list[AgentRunRead])

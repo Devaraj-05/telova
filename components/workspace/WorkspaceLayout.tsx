@@ -54,6 +54,8 @@ export function WorkspaceLayout() {
           onLogout={logout}
           onSwitchSession={workspace.handleSwitchSession}
           onNewChat={workspace.handleNewChat}
+          onRenameSession={workspace.handleRenameSession}
+          onDeleteSession={workspace.handleDeleteSession}
         />
       </div>
 
@@ -77,6 +79,8 @@ export function WorkspaceLayout() {
               onClose={() => setSidebarOpen(false)}
               onSwitchSession={workspace.handleSwitchSession}
               onNewChat={workspace.handleNewChat}
+              onRenameSession={workspace.handleRenameSession}
+              onDeleteSession={workspace.handleDeleteSession}
             />
           </div>
         </div>
