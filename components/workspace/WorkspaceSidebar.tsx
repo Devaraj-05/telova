@@ -1,19 +1,24 @@
 "use client";
 
 import Link from "next/link";
-import type { ComponentType } from "react";
+import { useEffect, useRef, useState } from "react";
+import type { ComponentType, KeyboardEvent } from "react";
 import {
   BarChart3,
   Bot,
   CalendarRange,
+  Check,
   LayoutDashboard,
   LogOut,
   MessageSquare,
+  MoreHorizontal,
   NotebookTabs,
+  Pencil,
   Plus,
   RefreshCcw,
   Settings,
   Sparkles,
+  Trash2,
   X,
 } from "lucide-react";
 
@@ -39,10 +44,221 @@ interface WorkspaceSidebarProps {
   mobile?: boolean;
   chatSessions?: ChatSession[];
   activeSessionId?: string | null;
+  chatsLabel?: string;
   onLogout?: () => void;
   onClose?: () => void;
   onSwitchSession?: (sessionId: string) => void;
   onNewChat?: () => void;
+  onRenameSession?: (sessionId: string, nextTitle: string) => void;
+  onDeleteSession?: (sessionId: string) => void;
+}
+
+interface ChatRowProps {
+  session: ChatSession;
+  isActive: boolean;
+  onSelect: () => void;
+  onRename?: (sessionId: string, nextTitle: string) => void;
+  onDelete?: (sessionId: string) => void;
+}
+
+function ChatRow({ session, isActive, onSelect, onRename, onDelete }: ChatRowProps) {
+  const [menuOpen, setMenuOpen] = useState(false);
+  const [renaming, setRenaming] = useState(false);
+  const [draftTitle, setDraftTitle] = useState(session.title);
+  const [confirmingDelete, setConfirmingDelete] = useState(false);
+  const menuRef = useRef<HTMLDivElement | null>(null);
+  const inputRef = useRef<HTMLInputElement | null>(null);
+
+  useEffect(() => {
+    setDraftTitle(session.title);
+  }, [session.title]);
+
+  useEffect(() => {
+    if (!menuOpen && !confirmingDelete) return;
+    const onDocClick = (e: MouseEvent) => {
+      if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
+        setMenuOpen(false);
+        setConfirmingDelete(false);
+      }
+    };
+    document.addEventListener("mousedown", onDocClick);
+    return () => document.removeEventListener("mousedown", onDocClick);
+  }, [menuOpen, confirmingDelete]);
+
+  useEffect(() => {
+    if (renaming) {
+      requestAnimationFrame(() => {
+        inputRef.current?.focus();
+        inputRef.current?.select();
+      });
+    }
+  }, [renaming]);
+
+  const commitRename = () => {
+    const trimmed = draftTitle.trim();
+    if (trimmed && trimmed !== session.title && onRename) {
+      onRename(session.id, trimmed);
+    } else {
+      setDraftTitle(session.title);
+    }
+    setRenaming(false);
+  };
+
+  const cancelRename = () => {
+    setDraftTitle(session.title);
+    setRenaming(false);
+  };
+
+  const handleInputKey = (e: KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === "Enter") {
+      e.preventDefault();
+      commitRename();
+    } else if (e.key === "Escape") {
+      e.preventDefault();
+      cancelRename();
+    }
+  };
+
+  return (
+    <div className="group relative">
+      {renaming ? (
+        <div
+          className={cn(
+            "flex w-full items-center gap-2 rounded-lg px-3 py-2 text-xs",
+            isActive ? "bg-brand/15" : "bg-white/5",
+          )}
+        >
+          <MessageSquare className="size-3.5 shrink-0 text-muted" />
+          <input
+            ref={inputRef}
+            value={draftTitle}
+            onChange={(e) => setDraftTitle(e.target.value)}
+            onBlur={commitRename}
+            onKeyDown={handleInputKey}
+            className="flex-1 min-w-0 bg-transparent text-text outline-none placeholder:text-muted/50"
+            placeholder="Chat name"
+            maxLength={120}
+          />
+          <button
+            type="button"
+            onMouseDown={(e) => {
+              e.preventDefault();
+              commitRename();
+            }}
+            className="shrink-0 rounded p-0.5 text-muted hover:text-success"
+            aria-label="Save chat name"
+          >
+            <Check className="size-3.5" />
+          </button>
+        </div>
+      ) : (
+        <button
+          type="button"
+          onClick={onSelect}
+          className={cn(
+            "flex w-full items-center gap-2 rounded-lg px-3 py-2 pr-8 text-left text-xs transition",
+            isActive
+              ? "bg-brand/15 text-brand"
+              : "text-muted hover:bg-white/5 hover:text-text",
+          )}
+        >
+          <MessageSquare className="size-3.5 shrink-0" />
+          <span className="truncate">{session.title}</span>
+        </button>
+      )}
+
+      {!renaming && (onRename || onDelete) ? (
+        <div ref={menuRef} className="absolute right-1 top-1/2 -translate-y-1/2">
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              setMenuOpen((v) => !v);
+              setConfirmingDelete(false);
+            }}
+            className={cn(
+              "rounded-md p-1 text-muted transition",
+              menuOpen
+                ? "bg-white/10 text-text opacity-100"
+                : "opacity-0 hover:bg-white/10 hover:text-text group-hover:opacity-100",
+            )}
+            aria-label="Chat options"
+            aria-haspopup="menu"
+            aria-expanded={menuOpen}
+          >
+            <MoreHorizontal className="size-3.5" />
+          </button>
+
+          {menuOpen ? (
+            <div
+              role="menu"
+              className="absolute right-0 top-full z-30 mt-1 w-40 overflow-hidden rounded-lg border border-border bg-panel shadow-panel"
+            >
+              {onRename ? (
+                <button
+                  type="button"
+                  role="menuitem"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setMenuOpen(false);
+                    setRenaming(true);
+                  }}
+                  className="flex w-full items-center gap-2 px-3 py-2 text-left text-xs text-text transition hover:bg-white/5"
+                >
+                  <Pencil className="size-3.5 text-muted" />
+                  Rename
+                </button>
+              ) : null}
+              {onDelete ? (
+                confirmingDelete ? (
+                  <div className="flex flex-col gap-1 border-t border-border bg-rose-500/5 px-3 py-2 text-xs">
+                    <p className="text-rose-300">Delete this chat?</p>
+                    <div className="flex gap-1">
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          onDelete(session.id);
+                          setMenuOpen(false);
+                          setConfirmingDelete(false);
+                        }}
+                        className="flex-1 rounded-md bg-rose-500/20 px-2 py-1 text-rose-200 transition hover:bg-rose-500/30"
+                      >
+                        Delete
+                      </button>
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setConfirmingDelete(false);
+                        }}
+                        className="flex-1 rounded-md bg-white/5 px-2 py-1 text-muted transition hover:bg-white/10"
+                      >
+                        Cancel
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <button
+                    type="button"
+                    role="menuitem"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setConfirmingDelete(true);
+                    }}
+                    className="flex w-full items-center gap-2 border-t border-border px-3 py-2 text-left text-xs text-rose-300 transition hover:bg-rose-500/10"
+                  >
+                    <Trash2 className="size-3.5" />
+                    Delete
+                  </button>
+                )
+              ) : null}
+            </div>
+          ) : null}
+        </div>
+      ) : null}
+    </div>
+  );
 }
 
 export function WorkspaceSidebar({
@@ -52,11 +268,17 @@ export function WorkspaceSidebar({
   mobile = false,
   chatSessions = [],
   activeSessionId,
+  chatsLabel = "Chats",
   onLogout,
   onClose,
   onSwitchSession,
   onNewChat,
+  onRenameSession,
+  onDeleteSession,
 }: WorkspaceSidebarProps) {
+  const showChatList =
+    (activeItem === "workspace" || activeItem === "analytics") &&
+    (!!onSwitchSession || chatSessions.length > 0 || !!onNewChat);
   return (
     <aside
       className={cn(
@@ -116,40 +338,38 @@ export function WorkspaceSidebar({
       </nav>
 
       {/* Chat Sessions */}
-      {activeItem === "workspace" && (
+      {showChatList && (
         <div className="mt-6">
           <div className="flex items-center justify-between px-3 mb-2">
             <p className="text-xs font-semibold uppercase tracking-wider text-muted">
-              Chats
+              {chatsLabel}
             </p>
-            <button
-              type="button"
-              onClick={onNewChat}
-              className="rounded-lg p-1 text-muted transition hover:bg-white/10 hover:text-text"
-              title="New chat"
-            >
-              <Plus className="size-3.5" />
-            </button>
+            {onNewChat ? (
+              <button
+                type="button"
+                onClick={onNewChat}
+                className="rounded-lg p-1 text-muted transition hover:bg-white/10 hover:text-text"
+                title={`New ${chatsLabel.toLowerCase().replace(/s$/, "")}`}
+              >
+                <Plus className="size-3.5" />
+              </button>
+            ) : null}
           </div>
-          <div className="max-h-[200px] overflow-y-auto space-y-0.5">
+          <div className="max-h-[260px] overflow-y-auto space-y-0.5">
             {chatSessions.length === 0 ? (
-              <p className="px-3 text-xs text-muted/60">No chats yet</p>
+              <p className="px-3 text-xs text-muted/60">
+                No {chatsLabel.toLowerCase()} yet
+              </p>
             ) : (
               chatSessions.map((session) => (
-                <button
+                <ChatRow
                   key={session.id}
-                  type="button"
-                  onClick={() => onSwitchSession?.(session.id)}
-                  className={cn(
-                    "flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-xs transition",
-                    session.id === activeSessionId
-                      ? "bg-brand/15 text-brand"
-                      : "text-muted hover:bg-white/5 hover:text-text",
-                  )}
-                >
-                  <MessageSquare className="size-3.5 shrink-0" />
-                  <span className="truncate">{session.title}</span>
-                </button>
+                  session={session}
+                  isActive={session.id === activeSessionId}
+                  onSelect={() => onSwitchSession?.(session.id)}
+                  onRename={onRenameSession}
+                  onDelete={onDeleteSession}
+                />
               ))
             )}
           </div>

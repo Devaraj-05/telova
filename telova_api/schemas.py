@@ -389,6 +389,35 @@ class AnalyticsQueryResponse(BaseModel):
     fallback_reason: str | None = None
 
 
+class ChatSessionRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: str
+    user_id: str
+    kind: str
+    title: str
+    goal_prompt: str | None = None
+    messages: list[dict[str, Any]]
+    metadata_json: dict[str, Any]
+    created_at: datetime
+    updated_at: datetime
+
+
+class ChatSessionCreateRequest(BaseModel):
+    kind: str = Field(default="workspace")
+    title: str = Field(default="New chat", max_length=255)
+    goal_prompt: str | None = None
+    messages: list[dict[str, Any]] = Field(default_factory=list)
+    metadata_json: dict[str, Any] = Field(default_factory=dict)
+
+
+class ChatSessionUpdateRequest(BaseModel):
+    title: str | None = Field(default=None, max_length=255)
+    goal_prompt: str | None = None
+    messages: list[dict[str, Any]] | None = None
+    metadata_json: dict[str, Any] | None = None
+
+
 class SystemStatusRead(BaseModel):
     app: str
     environment: str

@@ -138,3 +138,68 @@ export async function sendWorkspaceChatMessage(
     body: JSON.stringify({ user_id: userId, message, history, goal_id: goalId ?? null }),
   });
 }
+
+export type ChatSessionKind = "workspace" | "analytics";
+
+export interface ChatSessionRead {
+  id: string;
+  user_id: string;
+  kind: ChatSessionKind | string;
+  title: string;
+  goal_prompt: string | null;
+  messages: Array<Record<string, unknown>>;
+  metadata_json: Record<string, unknown>;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ChatSessionCreatePayload {
+  kind?: ChatSessionKind;
+  title?: string;
+  goal_prompt?: string | null;
+  messages?: Array<Record<string, unknown>>;
+  metadata_json?: Record<string, unknown>;
+}
+
+export interface ChatSessionUpdatePayload {
+  title?: string;
+  goal_prompt?: string | null;
+  messages?: Array<Record<string, unknown>>;
+  metadata_json?: Record<string, unknown>;
+}
+
+export function listChatSessions(
+  kind: ChatSessionKind = "workspace",
+  limit = 100,
+) {
+  return apiRequest<ChatSessionRead[]>(
+    `/api/v1/chat-sessions?kind=${encodeURIComponent(kind)}&limit=${limit}`,
+  );
+}
+
+export function createChatSession(payload: ChatSessionCreatePayload) {
+  return apiRequest<ChatSessionRead>("/api/v1/chat-sessions", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
+export function updateChatSession(
+  sessionId: string,
+  payload: ChatSessionUpdatePayload,
+) {
+  return apiRequest<ChatSessionRead>(
+    `/api/v1/chat-sessions/${encodeURIComponent(sessionId)}`,
+    {
+      method: "PATCH",
+      body: JSON.stringify(payload),
+    },
+  );
+}
+
+export function deleteChatSession(sessionId: string) {
+  return apiRequest<{ status: string; id: string }>(
+    `/api/v1/chat-sessions/${encodeURIComponent(sessionId)}`,
+    { method: "DELETE" },
+  );
+}

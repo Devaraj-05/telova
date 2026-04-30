@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 
 import { DEFAULT_AGENT_FEED, QUICK_ACTIONS, WELCOME_PROMPTS } from "@/lib/workspace/constants";
@@ -28,12 +28,16 @@ import {
   toCurrentGoalSummary,
 } from "@/lib/workspace/helpers";
 import {
+  createChatSession,
   createGoalPlan,
+  deleteChatSession,
   fetchDashboard,
   fetchSystemStatus,
+  listChatSessions,
   previewGoalPlan,
   sendChatMessage,
   sendWorkspaceChatMessage,
+  updateChatSession,
 } from "@/lib/workspace/api";
 import type { ChatHistoryItem } from "@/lib/workspace/api";
 import type {
@@ -91,6 +95,9 @@ export function useWorkspaceController(userId: string | null) {
   const [chatSessions, setChatSessions] = useState<ChatSession[]>([]);
   const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
   const [isHydrated, setIsHydrated] = useState(false);
+  const [hasSyncedFromBackend, setHasSyncedFromBackend] = useState(false);
+  const messagePersistTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const lastUserIdRef = useRef<string | null>(null);
 
   useEffect(() => {
     try {
@@ -151,6 +158,98 @@ export function useWorkspaceController(userId: string | null) {
   }, [messages, chatHistory, chatSessions, activeSessionId, isHydrated]);
 
   const activeUserId = draft?.userId ?? userId;
+
+  // Reset the backend-sync flag whenever the logged-in user changes (login/logout/switch).
+  useEffect(() => {
+    if (lastUserIdRef.current !== userId) {
+      lastUserIdRef.current = userId;
+      setHasSyncedFromBackend(false);
+    }
+  }, [userId]);
+
+  // On login, replace local sessions with the user's persisted sessions from the backend.
+  // Sessions in localStorage from the unauthenticated/demo flow are preserved on disk
+  // but no longer shown in the sidebar, so they don't pollute the user's workspace.
+  useEffect(() => {
+    if (!isHydrated || !userId || hasSyncedFromBackend) return;
+
+    let cancelled = false;
+    (async () => {
+      try {
+        const remote = await listChatSessions("workspace");
+        if (cancelled) return;
+
+        const remoteSessions: ChatSession[] = remote.map((s) => ({
+          id: s.id,
+          title: s.title,
+          createdAt: s.created_at,
+          goalPrompt: s.goal_prompt ?? "",
+        }));
+        setChatSessions(remoteSessions);
+
+        // Cache each session's messages locally so offline reads still work.
+        for (const s of remote) {
+          try {
+            localStorage.setItem(
+              `telova_session_${s.id}`,
+              JSON.stringify(s.messages ?? []),
+            );
+          } catch {
+            // localStorage quota — ignore, backend remains source of truth.
+          }
+        }
+
+        // If the previously-active session no longer exists for this user, drop it.
+        if (
+          activeSessionId &&
+          !remoteSessions.some((s) => s.id === activeSessionId)
+        ) {
+          setActiveSessionId(null);
+          setMessages([createWelcomeMessage()]);
+        } else if (activeSessionId) {
+          // Refresh active session messages from backend.
+          const active = remote.find((s) => s.id === activeSessionId);
+          if (active && Array.isArray(active.messages)) {
+            setMessages(active.messages as unknown as ChatMessage[]);
+          }
+        }
+      } catch {
+        // Backend unreachable — keep local sessions as fallback.
+      } finally {
+        if (!cancelled) setHasSyncedFromBackend(true);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [isHydrated, userId, hasSyncedFromBackend, activeSessionId]);
+
+  // Debounced persistence of the active session's messages to the backend.
+  useEffect(() => {
+    if (!isHydrated || !hasSyncedFromBackend || !userId || !activeSessionId) return;
+    // Skip the implicit welcome-only state (don't waste a write on an empty thread).
+    if (messages.length === 0) return;
+    if (messages.length === 1 && messages[0].type === "welcome") return;
+
+    if (messagePersistTimerRef.current) {
+      clearTimeout(messagePersistTimerRef.current);
+    }
+    messagePersistTimerRef.current = setTimeout(() => {
+      void updateChatSession(activeSessionId, {
+        messages: messages as unknown as Array<Record<string, unknown>>,
+      }).catch(() => {
+        // Backend unreachable — localStorage already holds the latest state.
+      });
+    }, 800);
+
+    return () => {
+      if (messagePersistTimerRef.current) {
+        clearTimeout(messagePersistTimerRef.current);
+        messagePersistTimerRef.current = null;
+      }
+    };
+  }, [messages, activeSessionId, userId, isHydrated, hasSyncedFromBackend]);
 
   const refreshWorkspaceContext = useCallback(async () => {
     if (!activeUserId) {
@@ -372,11 +471,30 @@ export function useWorkspaceController(userId: string | null) {
       setMode("reply");
       setChatPhase("asking_background");
 
-      // Create a new chat session
-      const sessionId = createMessageId("session");
+      // Create a new chat session — use backend ID when authenticated so the
+      // session persists across devices; fall back to a local ID otherwise.
+      const fallbackId = createMessageId("session");
+      const sessionTitle =
+        prompt.length > 50 ? prompt.slice(0, 50) + "..." : prompt;
+      let sessionId = fallbackId;
+
+      if (userId) {
+        try {
+          const created = await createChatSession({
+            kind: "workspace",
+            title: sessionTitle,
+            goal_prompt: prompt,
+            messages: [],
+          });
+          sessionId = created.id;
+        } catch {
+          // Backend unreachable — keep the local fallback ID.
+        }
+      }
+
       const newSession: ChatSession = {
         id: sessionId,
-        title: prompt.length > 50 ? prompt.slice(0, 50) + "..." : prompt,
+        title: sessionTitle,
         createdAt: nowIso(),
         goalPrompt: prompt,
       };
@@ -848,6 +966,59 @@ export function useWorkspaceController(userId: string | null) {
     setActiveSessionId(null);
   }, [activeSessionId, handleResetWorkspace, messages]);
 
+  const handleRenameSession = useCallback(
+    async (sessionId: string, nextTitle: string) => {
+      const trimmed = nextTitle.trim();
+      if (!trimmed) return;
+
+      setChatSessions((prev) =>
+        prev.map((s) => (s.id === sessionId ? { ...s, title: trimmed } : s)),
+      );
+
+      if (userId) {
+        try {
+          await updateChatSession(sessionId, { title: trimmed });
+        } catch {
+          // Local update stays; backend will catch up on next successful write.
+        }
+      }
+    },
+    [userId],
+  );
+
+  const handleDeleteSession = useCallback(
+    async (sessionId: string) => {
+      const wasActive = sessionId === activeSessionId;
+
+      setChatSessions((prev) => prev.filter((s) => s.id !== sessionId));
+      try {
+        localStorage.removeItem(`telova_session_${sessionId}`);
+      } catch {
+        // ignore storage errors
+      }
+
+      if (wasActive) {
+        setActiveSessionId(null);
+        setMessages([createWelcomeMessage()]);
+        setPendingFollowup(null);
+        setDraft(null);
+        setPreview(null);
+        setCreatedGoal(null);
+        setChatPhase("idle");
+        setMode("goal");
+      }
+
+      if (userId) {
+        try {
+          await deleteChatSession(sessionId);
+        } catch {
+          // Backend unreachable — local state is updated; will resync on next login.
+        }
+      }
+    },
+    [activeSessionId, userId],
+  );
+
   return {
     messages,
     composerValue,
@@ -873,6 +1044,8 @@ export function useWorkspaceController(userId: string | null) {
     handleResetWorkspace,
     handleSwitchSession,
     handleNewChat,
+    handleRenameSession,
+    handleDeleteSession,
   };
 }
 
