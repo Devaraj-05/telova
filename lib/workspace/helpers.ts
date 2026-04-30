@@ -224,12 +224,15 @@ export function applyFollowupAnswer(
   }
 
   if (question.field === "deadline") {
-    const parsed = extractDeadline(value);
-    return {
+    const parsed =
+      extractDeadline(value, { allowLooseWeekday: true }) ??
+      inferDefaultDeadline(draft.prompt);
+    const nextDraft = {
       ...draft,
-      deadlineIso: parsed?.iso ?? draft.deadlineIso,
-      deadlineLabel: parsed?.label ?? value,
+      deadlineIso: parsed.iso,
+      deadlineLabel: parsed.label,
     };
+    return applyAvailabilityHint(nextDraft, value);
   }
 
   if (question.field === "dailyHours") {
@@ -1269,25 +1272,171 @@ function withConstraint(draft: GoalDraft, constraint: string): GoalDraft {
   };
 }
 
-function extractDeadline(text: string) {
+function extractDeadline(
+  text: string,
+  options: { allowLooseWeekday?: boolean } = {},
+) {
+  const normalized = text.trim().toLowerCase();
   const match = text.match(/(\d+)\s*(day|days|week|weeks|month|months)/i);
-  if (!match) {
-    return null;
+  if (match) {
+    const amount = Number(match[1]);
+    const unit = match[2].toLowerCase();
+    const multiplier =
+      unit.startsWith("day") ? 1 : unit.startsWith("week") ? 7 : 30;
+    return buildDeadline(amount * multiplier, `${amount} ${unit}`);
   }
 
-  const amount = Number(match[1]);
-  const unit = match[2].toLowerCase();
+  if (/\b(today)\b/.test(normalized)) {
+    return buildDeadline(0, "today");
+  }
+
+  if (/\b(tomorrow)\b/.test(normalized)) {
+    return buildDeadline(1, "tomorrow");
+  }
+
+  if (/\b(asap|soon|quickly)\b/.test(normalized)) {
+    return buildDeadline(14, "2 weeks");
+  }
+
+  if (/\b(this week|end of week|by friday)\b/.test(normalized)) {
+    return buildDeadlineToWeekday(5, "this week");
+  }
+
+  if (/\b(next week)\b/.test(normalized)) {
+    return buildDeadline(7, "next week");
+  }
+
+  if (/\b(this month|end of month)\b/.test(normalized)) {
+    return buildDeadlineToMonthEnd("this month");
+  }
+
+  if (/\b(next month)\b/.test(normalized)) {
+    return buildDeadline(30, "next month");
+  }
+
+  const weekday = extractWeekday(normalized, options.allowLooseWeekday ?? false);
+  if (weekday !== null) {
+    return buildDeadlineToWeekday(weekday, `by ${weekdayName(weekday)}`);
+  }
+
+  const parsedDate = Date.parse(text);
+  if (!Number.isNaN(parsedDate)) {
+    const deadline = new Date(parsedDate);
+    return {
+      label: deadline.toLocaleDateString("en-US", {
+        month: "short",
+        day: "numeric",
+        year: "numeric",
+      }),
+      iso: deadline.toISOString(),
+    };
+  }
+
+  return null;
+}
+
+function inferDefaultDeadline(prompt: string) {
+  const lower = prompt.toLowerCase();
+  if (lower.includes("job") || lower.includes("engineer")) {
+    return buildDeadline(60, "2 months");
+  }
+  if (lower.includes("certification") || lower.includes("exam")) {
+    return buildDeadline(30, "1 month");
+  }
+  if (lower.includes("launch") || lower.includes("mvp")) {
+    return buildDeadline(30, "30 days");
+  }
+  return buildDeadline(30, "30 days");
+}
+
+function buildDeadline(daysFromNow: number, label: string) {
   const now = new Date();
-  const multiplier =
-    unit.startsWith("day") ? 1 : unit.startsWith("week") ? 7 : 30;
   const deadline = new Date(
-    now.getTime() + amount * multiplier * 24 * 60 * 60 * 1000,
+    now.getTime() + daysFromNow * 24 * 60 * 60 * 1000,
   );
 
   return {
-    label: `${amount} ${unit}`,
+    label,
     iso: deadline.toISOString(),
   };
+}
+
+function buildDeadlineToWeekday(targetDay: number, label: string) {
+  const now = new Date();
+  const currentDay = now.getDay();
+  let daysUntil = (targetDay - currentDay + 7) % 7;
+  if (daysUntil === 0) {
+    daysUntil = 7;
+  }
+  return buildDeadline(daysUntil, label);
+}
+
+function buildDeadlineToMonthEnd(label: string) {
+  const now = new Date();
+  const deadline = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59);
+  return {
+    label,
+    iso: deadline.toISOString(),
+  };
+}
+
+function extractWeekday(text: string, allowLoose: boolean): number | null {
+  const weekdays: Array<[RegExp, number]> = [
+    [/\b(sunday|sun)\b/, 0],
+    [/\b(monday|mon)\b/, 1],
+    [/\b(tuesday|tue|tues)\b/, 2],
+    [/\b(wednesday|wed)\b/, 3],
+    [/\b(thursday|thu|thur|thurs)\b/, 4],
+    [/\b(friday|fri)\b/, 5],
+    [/\b(saturday|sat)\b/, 6],
+  ];
+  if (allowLoose) {
+    return weekdays.find(([pattern]) => pattern.test(text))?.[1] ?? null;
+  }
+
+  const qualifiedWeekday = text.match(
+    /\b(?:by|on|before|until|next|this)\s+(sunday|sun|monday|mon|tuesday|tue|tues|wednesday|wed|thursday|thu|thur|thurs|friday|fri|saturday|sat)\b/,
+  )?.[1];
+  if (!qualifiedWeekday) {
+    return null;
+  }
+  return weekdays.find(([pattern]) => pattern.test(qualifiedWeekday))?.[1] ?? null;
+}
+
+function weekdayName(day: number) {
+  return ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"][day] ?? "that day";
+}
+
+function applyAvailabilityHint(draft: GoalDraft, answer: string): GoalDraft {
+  const lower = answer.toLowerCase();
+  if (/\b(weekdays|weekday|mon\s*-\s*fri|monday to friday)\b/.test(lower)) {
+    return withConstraint(
+      {
+        ...draft,
+        includeWeekends: false,
+      },
+      "Weekdays only - Monday to Friday",
+    );
+  }
+  if (/\b(weekends only|saturday and sunday|sat\s*-\s*sun)\b/.test(lower)) {
+    return withConstraint(
+      {
+        ...draft,
+        includeWeekends: true,
+      },
+      "Weekends only - schedule on Saturday and Sunday",
+    );
+  }
+  if (/\b(include weekends|all 7 days|every day|daily)\b/.test(lower)) {
+    return withConstraint(
+      {
+        ...draft,
+        includeWeekends: true,
+      },
+      "Include weekends when useful",
+    );
+  }
+  return draft;
 }
 
 function extractHoursNumber(dailyHours: string | null): number | null {
