@@ -153,7 +153,7 @@ export function nextFollowupQuestion(
       field: "deadline",
       prompt: "What's your target timeline for this goal?",
       helperText:
-        "I'll build a day-by-day plan that fits within this window. Be realistic — padding helps.",
+        "Reply with a duration, for example: 1 week, 1 month, 1.5 months, 1 and a half months, 2 months, 1 year, or 2 years. I'll schedule only within that target timeline; available days come next.",
       options: deadlineOptions,
     };
   }
@@ -225,7 +225,7 @@ export function applyFollowupAnswer(
 
   if (question.field === "deadline") {
     const parsed =
-      extractDeadline(value, { allowLooseWeekday: true }) ??
+      extractDeadline(value) ??
       inferDefaultDeadline(draft.prompt);
     const nextDraft = {
       ...draft,
@@ -792,16 +792,18 @@ function getDeadlineOptions(prompt: string) {
   if (lower.includes("job") || lower.includes("engineer")) {
     return [
       { label: "1 month", value: "1 month" },
+      { label: "1.5 months", value: "1.5 months" },
       { label: "2 months", value: "2 months" },
-      { label: "3 months", value: "3 months" },
       { label: "6 months", value: "6 months" },
+      { label: "1 year", value: "1 year" },
     ];
   }
   return [
-    { label: "30 days", value: "30 days" },
-    { label: "60 days", value: "60 days" },
-    { label: "90 days", value: "90 days" },
-    { label: "6 months", value: "6 months" },
+    { label: "1 week", value: "1 week" },
+    { label: "1 month", value: "1 month" },
+    { label: "1.5 months", value: "1.5 months" },
+    { label: "2 months", value: "2 months" },
+    { label: "1 year", value: "1 year" },
   ];
 }
 
@@ -1277,13 +1279,9 @@ function extractDeadline(
   options: { allowLooseWeekday?: boolean } = {},
 ) {
   const normalized = text.trim().toLowerCase();
-  const match = text.match(/(\d+)\s*(day|days|week|weeks|month|months)/i);
-  if (match) {
-    const amount = Number(match[1]);
-    const unit = match[2].toLowerCase();
-    const multiplier =
-      unit.startsWith("day") ? 1 : unit.startsWith("week") ? 7 : 30;
-    return buildDeadline(amount * multiplier, `${amount} ${unit}`);
+  const duration = parseTimelineDuration(normalized);
+  if (duration) {
+    return buildDeadlineFromDuration(duration.amount, duration.unit);
   }
 
   if (/\b(today)\b/.test(normalized)) {
@@ -1359,6 +1357,95 @@ function buildDeadline(daysFromNow: number, label: string) {
     label,
     iso: deadline.toISOString(),
   };
+}
+
+type TimelineUnit = "day" | "week" | "month" | "year";
+
+function parseTimelineDuration(text: string): { amount: number; unit: TimelineUnit } | null {
+  const normalized = normalizeNumberWords(text);
+  const unitPattern = "(days?|weeks?|months?|years?)";
+  const mixedHalfMatch = normalized.match(
+    new RegExp(
+      `\\b(\\d+(?:\\.\\d+)?)\\s+(?:and\\s+)?(?:(?:a|1)\\s+)?half\\s*${unitPattern}\\b`,
+    ),
+  );
+  if (mixedHalfMatch) {
+    return {
+      amount: Number(mixedHalfMatch[1]) + 0.5,
+      unit: normalizeTimelineUnit(mixedHalfMatch[2]),
+    };
+  }
+
+  const halfOnlyMatch = normalized.match(
+    new RegExp(`\\b(?:(?:a|1)\\s+)?half\\s*(?:(?:a|1)\\s+)?${unitPattern}\\b`),
+  );
+  if (halfOnlyMatch) {
+    return {
+      amount: 0.5,
+      unit: normalizeTimelineUnit(halfOnlyMatch[1]),
+    };
+  }
+
+  const numericMatch = normalized.match(
+    new RegExp(`\\b(\\d+(?:\\.\\d+)?)\\s*${unitPattern}\\b`),
+  );
+  if (!numericMatch) {
+    return null;
+  }
+
+  return {
+    amount: Number(numericMatch[1]),
+    unit: normalizeTimelineUnit(numericMatch[2]),
+  };
+}
+
+function normalizeNumberWords(text: string) {
+  const words: Record<string, string> = {
+    a: "1",
+    an: "1",
+    one: "1",
+    two: "2",
+    three: "3",
+    four: "4",
+    five: "5",
+    six: "6",
+    seven: "7",
+    eight: "8",
+    nine: "9",
+    ten: "10",
+  };
+  return text.replace(
+    /\b(a|an|one|two|three|four|five|six|seven|eight|nine|ten)\b/g,
+    (word) => words[word] ?? word,
+  );
+}
+
+function normalizeTimelineUnit(unit: string): TimelineUnit {
+  if (unit.startsWith("day")) {
+    return "day";
+  }
+  if (unit.startsWith("week")) {
+    return "week";
+  }
+  if (unit.startsWith("year")) {
+    return "year";
+  }
+  return "month";
+}
+
+function buildDeadlineFromDuration(amount: number, unit: TimelineUnit) {
+  const multipliers: Record<TimelineUnit, number> = {
+    day: 1,
+    week: 7,
+    month: 30,
+    year: 365,
+  };
+  const days = Math.max(1, Math.round(amount * multipliers[unit]));
+  const labelAmount = Number.isInteger(amount)
+    ? String(amount)
+    : String(amount).replace(/\.0$/, "");
+  const labelUnit = amount === 1 ? unit : `${unit}s`;
+  return buildDeadline(days, `${labelAmount} ${labelUnit}`);
 }
 
 function buildDeadlineToWeekday(targetDay: number, label: string) {
